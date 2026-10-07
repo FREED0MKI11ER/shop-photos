@@ -104,6 +104,32 @@ Uploads are unrestricted, but a converted copy is prepared for SSSC automaticall
   `SSSC_VIDEO_MAX_MB` (200), `SSSC_IMAGE_MAX_EDGE` (2560), `SSSC_JPEG_QUALITY`
   (4), `SSSC_ENABLED` (1), `FFMPEG_PATH`.
 
+## Custom port & public address (`site.json`)
+
+Create `site.json` in the install folder (next to `server.js`) to change the port
+and set the address shown on the Connect tab:
+
+```json
+{ "port": 80, "publicUrl": "http://shopphotos.net" }
+```
+
+- `port` overrides the `PORT` env and the default `3000`. Restart the service
+  after changing it.
+- `publicUrl` is shown on the Connect tab (the QR still encodes the local IP).
+- `site.json` is machine-specific and is preserved across updates.
+
+To run on port 80, also allow it through the firewall:
+
+```
+powershell -ExecutionPolicy Bypass -File scripts\firewall-rule.ps1 -Port 80
+```
+
+Or set both at install time:
+
+```
+install.bat -Port 80 -PublicUrl http://shopphotos.net
+```
+
 ## Deploy to another shop PC
 
 Build a self-contained installer kit (bundles a portable Node runtime, so the

@@ -494,6 +494,10 @@ async function loadConnect() {
     const url = info.primaryUrl || window.location.origin;
     $("connectUrl").textContent = url;
     $("qrImg").src = "/api/qr?text=" + encodeURIComponent(url);
+    if (info.publicUrl) {
+      $("friendlyRow").hidden = false;
+      $("friendlyUrl").textContent = info.publicUrl;
+    }
     if (info.version) $("versionLine").textContent = "Version " + info.version;
     connectLoaded = true;
   } catch {
@@ -504,6 +508,16 @@ async function loadConnect() {
 
 $("copyUrl").addEventListener("click", async () => {
   const text = $("connectUrl").textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("Address copied");
+  } catch {
+    toast("Copy failed — select the address manually", true);
+  }
+});
+
+$("copyFriendly").addEventListener("click", async () => {
+  const text = $("friendlyUrl").textContent;
   try {
     await navigator.clipboard.writeText(text);
     toast("Address copied");

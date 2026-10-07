@@ -11,6 +11,7 @@ node_modules/
 *.cred
 admin.sessions.json
 updater/config.json
+site.json
 
 # Logs
 *.log

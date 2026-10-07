@@ -10,7 +10,6 @@ const multer = require("multer");
 const QRCode = require("qrcode");
 const { createConverter } = require("./lib/converter");
 
-const PORT = parseInt(process.env.PORT, 10) || 3000;
 const HOST = process.env.HOST || "0.0.0.0";
 const MAX_UPLOAD_BYTES =
   (parseInt(process.env.MAX_UPLOAD_GB, 10) || 2) * 1024 * 1024 * 1024;
@@ -22,6 +21,22 @@ const SSSC_DIR = path.join(DATA_DIR, "sssc");
 const RUNTIME_DIR = path.join(ROOT, "runtime");
 const DB_FILE = path.join(DATA_DIR, "db.json");
 const PUBLIC_DIR = path.join(ROOT, "public");
+
+// Site settings (site.json at the app root), e.g.
+//   { "port": 80, "publicUrl": "http://shopphotos.net" }
+// Port precedence: site.json > PORT env > 3000.
+let SITE_CONFIG = {};
+try {
+  SITE_CONFIG = JSON.parse(
+    fs.readFileSync(path.join(ROOT, "site.json"), "utf8").replace(/^\uFEFF/, "")
+  );
+} catch (err) {
+  SITE_CONFIG = {};
+}
+
+const PORT =
+  parseInt(SITE_CONFIG.port, 10) || parseInt(process.env.PORT, 10) || 3000;
+const PUBLIC_URL = String(SITE_CONFIG.publicUrl || "").replace(/\/+$/, "");
 
 const UPDATER_DIR = path.join(ROOT, "updater");
 const ADMIN_CRED_FILE = path.join(UPDATER_DIR, "admin.cred");
@@ -143,6 +158,7 @@ app.get("/api/info", (req, res) => {
     hostname: os.hostname(),
     port: PORT,
     version: APP_VERSION,
+    publicUrl: PUBLIC_URL || null,
     addresses: addrs,
     primaryUrl: addrs.length ? `http://${addrs[0].address}:${PORT}` : null,
     maxUploadBytes: MAX_UPLOAD_BYTES,
@@ -452,9 +468,22 @@ app.use(express.static(PUBLIC_DIR));
 
 app.use((req, res) => res.status(404).json({ error: "Not found" }));
 
-app.listen(PORT, HOST, () => {
+function onListen(port) {
   const addrs = lanAddresses();
-  console.log(`Shop Media Share running on port ${PORT}`);
-  console.log(`  Local:   http://localhost:${PORT}`);
-  for (const a of addrs) console.log(`  Network: http://${a.address}:${PORT}`);
+  console.log(`Shop Media Share running on port ${port}`);
+  console.log(`  Local:   http://localhost:${port}`);
+  for (const a of addrs) console.log(`  Network: http://${a.address}:${port}`);
+  if (PUBLIC_URL) console.log(`  Public:  ${PUBLIC_URL}`);
+}
+
+const server = app.listen(PORT, HOST, () => onListen(PORT));
+server.on("error", (err) => {
+  const fallback = parseInt(process.env.PORT, 10) || 3000;
+  if ((err.code === "EADDRINUSE" || err.code === "EACCES") && fallback !== PORT) {
+    console.error(`Port ${PORT} is unavailable (${err.code}); falling back to ${fallback}.`);
+    app.listen(fallback, HOST, () => onListen(fallback));
+  } else {
+    console.error(`Failed to start server on port ${PORT}: ${err.message}`);
+    process.exit(1);
+  }
 });

@@ -1,9 +1,10 @@
 param(
   [string]$InstallDir = "C:\Program Files\ShopPhotos",
-  [int]$Port = 3000,
+  [int]$Port = 0,
   [string]$ServiceName = "ShopMediaShare",
   [string]$Repo = "",
   [string]$AdminPassword = "",
+  [string]$PublicUrl = "",
   [switch]$NoPause
 )
 
@@ -31,10 +32,13 @@ if (-not (Test-Admin)) {
   )
   if ($Repo) { $psArgs += @("-Repo", "`"$Repo`"") }
   if ($AdminPassword) { $psArgs += @("-AdminPassword", "`"$AdminPassword`"") }
+  if ($PublicUrl) { $psArgs += @("-PublicUrl", "`"$PublicUrl`"") }
   if ($NoPause) { $psArgs += "-NoPause" }
   Start-Process -FilePath "powershell.exe" -Verb RunAs -ArgumentList $psArgs
   exit 0
 }
+
+$effectivePort = if ($Port -gt 0) { $Port } else { 3000 }
 
 $Source = Split-Path -Parent $PSCommandPath
 $KitNode = Join-Path $Source "runtime\node\node.exe"
@@ -44,8 +48,9 @@ Write-Host ""
 Write-Host "  Shop Photos installer" -ForegroundColor Magenta
 Write-Host "  ---------------------"
 Write-Host "  Install folder : $InstallDir"
-Write-Host "  Port           : $Port"
+Write-Host "  Port           : $effectivePort"
 Write-Host "  Service name   : $ServiceName"
+if ($PublicUrl) { Write-Host "  Public URL     : $PublicUrl" }
 Write-Host ""
 
 if (-not (Test-Path $KitNode)) {
@@ -93,15 +98,28 @@ foreach ($item in $items) {
   }
 }
 
+# --- Write site.json (custom port / public URL) ---
+if ($Port -gt 0 -or $PublicUrl) {
+  $site = [ordered]@{}
+  if ($Port -gt 0) { $site.port = $Port }
+  if ($PublicUrl) { $site.publicUrl = $PublicUrl }
+  [System.IO.File]::WriteAllText(
+    (Join-Path $InstallDir "site.json"),
+    ($site | ConvertTo-Json),
+    (New-Object System.Text.UTF8Encoding($false))
+  )
+  Write-Host "Wrote site.json (port $effectivePort, url $PublicUrl)"
+}
+
 # --- Install the service ---
 Write-Host "Installing service..."
 $env:SERVICE_NAME = $ServiceName
-$env:PORT = "$Port"
+$env:PORT = "$effectivePort"
 & $InstallNode (Join-Path $InstallDir "service\install-service.js")
 
 # --- Firewall rule ---
 Write-Host "Adding firewall rule..."
-& (Join-Path $InstallDir "scripts\firewall-rule.ps1") -Port "$Port" -RuleName $ServiceName
+& (Join-Path $InstallDir "scripts\firewall-rule.ps1") -Port "$effectivePort" -RuleName $ServiceName
 
 # --- Wait for the service to come up ---
 $deadline = (Get-Date).AddSeconds(30)
@@ -114,7 +132,7 @@ while ((Get-Date) -lt $deadline) {
 $running = (Get-Service -Name $ServiceId -ErrorAction SilentlyContinue).Status -eq "Running"
 $http = $false
 try {
-  Invoke-WebRequest -UseBasicParsing "http://localhost:$Port/api/info" -TimeoutSec 5 | Out-Null
+  Invoke-WebRequest -UseBasicParsing "http://localhost:$effectivePort/api/info" -TimeoutSec 5 | Out-Null
   $http = $true
 } catch { $http = $false }
 
@@ -135,9 +153,12 @@ if ($running -and $http) {
   Write-Host "  Service was installed but is not running yet." -ForegroundColor Yellow
 }
 Write-Host ""
-Write-Host "  Open on this PC  : http://localhost:$Port"
+Write-Host "  Open on this PC  : http://localhost:$effectivePort"
 if ($lanIp) {
-  Write-Host "  Open on a phone  : http://${lanIp}:$Port"
+  Write-Host "  Open on a phone  : http://${lanIp}:$effectivePort"
+}
+if ($PublicUrl) {
+  Write-Host "  Public address   : $PublicUrl"
 }
 Write-Host ""
 Write-Host "  The Connect tab in the site shows a QR code for phones."
@@ -149,7 +170,7 @@ if ($Repo) {
   $updaterArgs = @{
     Repo        = $Repo
     InstallDir  = $InstallDir
-    Port        = $Port
+    Port        = $effectivePort
     ServiceName = $ServiceName
     NoPause     = $true
   }
