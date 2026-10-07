@@ -1,0 +1,20 @@
+# Runtime data (photos, metadata) - never commit
+data/
+daemon/
+dist/
+
+# Dependencies are restored/rebuilt for releases, not committed
+node_modules/
+
+# Secrets / credentials / sessions
+*.cred
+admin.sessions.json
+
+# Logs
+*.log
+
+# OS / editor
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/

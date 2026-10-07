@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#a855f7">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Shop Photos">
+<meta name="description" content="Share photos and videos from your phone to the shop computers">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+<title>Shop Photos</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="gate" id="gate">
+  <div class="gate-card">
+    <div class="gate-logo">📷</div>
+    <h1>Shop Photos</h1>
+    <p>Enter your employee ID to share photos and videos with the shop.</p>
+    <form id="gateForm">
+      <input id="gateInput" placeholder="Employee ID" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" required>
+      <button type="submit" class="btn">Continue</button>
+    </form>
+    <p class="gate-note">Your ID is saved on this device only.</p>
+  </div>
+</div>
+
+<div class="app" id="app" hidden>
+  <header class="topbar">
+    <div class="brand"><span class="brand-dot"></span>Shop Photos</div>
+    <div class="who">
+      <span class="chip" id="whoChip">—</span>
+      <button class="link" id="changeId">Change</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-view="upload">Upload</button>
+    <button class="tab" data-view="gallery">Gallery</button>
+    <button class="tab" data-view="connect">Connect</button>
+    <button class="tab" data-view="admin">Admin</button>
+  </nav>
+
+  <main>
+    <section class="view active" id="view-upload">
+      <div class="dropzone" id="dropzone">
+        <input type="file" id="fileInput" accept="image/*,video/*" multiple hidden>
+        <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
+        <input type="file" id="videoInput" accept="video/*" capture="environment" hidden>
+        <div class="dz-icon">📷</div>
+        <div class="dz-title">Tap to choose photos &amp; videos</div>
+        <div class="dz-sub">or drag &amp; drop files here</div>
+        <div class="dz-actions">
+          <button class="btn" id="pickBtn" type="button">Choose files</button>
+          <button class="btn ghost touch-only" id="shootPhotoBtn" type="button">Take photo</button>
+          <button class="btn ghost touch-only" id="shootVideoBtn" type="button">Record video</button>
+        </div>
+      </div>
+      <div class="queue" id="queue"></div>
+      <div class="upload-bar" id="uploadBar" hidden>
+        <div class="progress"><div class="bar" id="progressBar"></div></div>
+        <div class="upload-status" id="uploadStatus"></div>
+      </div>
+    </section>
+
+    <section class="view" id="view-gallery">
+      <div class="filters">
+        <select id="filterEmployee"><option value="">All employees</option></select>
+        <select id="filterType">
+          <option value="">All types</option>
+          <option value="image">Photos</option>
+          <option value="video">Videos</option>
+        </select>
+        <input id="searchBox" placeholder="Search filename…">
+        <button class="btn ghost small" id="refreshBtn" type="button">Refresh</button>
+      </div>
+      <div class="gallery" id="gallery"></div>
+      <div class="empty" id="galleryEmpty" hidden>No media yet. Upload something!</div>
+    </section>
+
+    <section class="view" id="view-connect">
+      <div class="connect-card">
+        <h2>Get photos onto your phone</h2>
+        <p>On the same Wi-Fi, scan this code or type the address into your phone's browser.</p>
+        <img class="qr" id="qrImg" alt="QR code for this site">
+        <div class="url-row">
+          <code id="connectUrl">loading…</code>
+          <button class="btn small" id="copyUrl" type="button">Copy</button>
+        </div>
+        <p class="muted">Tip: use your browser's "Add to Home Screen" for one-tap access.</p>
+        <p class="muted" id="versionLine"></p>
+      </div>
+    </section>
+
+    <section class="view" id="view-admin">
+      <div class="connect-card">
+        <h2>Administrator</h2>
+        <div id="adminLogin">
+          <p>Enter the admin password to check for and install updates.</p>
+          <form id="adminLoginForm">
+            <input type="password" id="adminPassword" placeholder="Admin password" autocomplete="current-password">
+            <button class="btn" type="submit">Log in</button>
+          </form>
+        </div>
+        <div id="adminPanel" hidden>
+          <div class="admin-status" id="adminStatus"></div>
+          <div class="admin-actions">
+            <button class="btn ghost" id="adminCheckBtn" type="button">Check for updates</button>
+            <button class="btn" id="adminUpdateBtn" type="button">Update now</button>
+          </div>
+          <div class="admin-result" id="adminResult"></div>
+          <pre class="admin-log" id="adminLog"></pre>
+          <button class="link" id="adminLogout" type="button">Log out</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-inner">
+    <button class="modal-close" id="modalClose" type="button">✕</button>
+    <div class="modal-media" id="modalMedia"></div>
+    <div class="modal-meta" id="modalMeta"></div>
+    <div class="modal-actions">
+      <a class="btn" id="modalDownload" download>Download</a>
+      <button class="btn ghost danger" id="modalDelete" type="button">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+{
+    "name":  "shop-media-share",
+    "version":  "1.0.1",
+    "private":  true,
+    "description":  "Local network photo/video sharing for the shop",
+    "main":  "server.js",
+    "scripts":  {
+                    "start":  "node server.js",
+                    "install-service":  "node service/install-service.js",
+                    "uninstall-service":  "node service/uninstall-service.js"
+                },
+    "dependencies":  {
+                         "express":  "^4.21.2",
+                         "multer":  "^2.0.1",
+                         "node-windows":  "^1.0.0-beta.8",
+                         "qrcode":  "^1.5.4"
+                     }
+}
