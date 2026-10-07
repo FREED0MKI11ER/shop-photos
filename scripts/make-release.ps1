@@ -11,6 +11,13 @@ $ProgressPreference = "SilentlyContinue"
 $Root = Split-Path -Parent $PSScriptRoot
 $ReleaseDir = Join-Path $Root "dist\releases"
 
+# Make the portable Git/gh tools available if they were installed there.
+$tools = Join-Path $env:LOCALAPPDATA "ShopPhotosTools"
+foreach ($sub in @("git\cmd", "gh\bin")) {
+  $p = Join-Path $tools $sub
+  if (Test-Path $p) { $env:Path = "$p;$env:Path" }
+}
+
 function Get-RepoFromGit {
   try {
     $url = (git -C $Root remote get-url origin 2>$null).Trim()
