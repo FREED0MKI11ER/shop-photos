@@ -6,9 +6,10 @@ dist/
 # Dependencies are restored/rebuilt for releases, not committed
 node_modules/
 
-# Secrets / credentials / sessions
+# Secrets / credentials / sessions / machine-specific config
 *.cred
 admin.sessions.json
+updater/config.json
 
 # Logs
 *.log
