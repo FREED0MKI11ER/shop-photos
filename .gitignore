@@ -2,6 +2,7 @@
 data/
 daemon/
 dist/
+runtime/
 
 # Dependencies are restored/rebuilt for releases, not committed
 node_modules/

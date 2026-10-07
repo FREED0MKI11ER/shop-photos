@@ -85,6 +85,27 @@ LAN setup does not use. The shortcut still gives a home-screen icon.
 - Default max upload size: **2 GB per file**. Change with `MAX_UPLOAD_GB`
   (e.g. `set MAX_UPLOAD_GB=5`).
 
+## Notes
+
+Each photo/video can have an optional note. Type one in the **Note for these
+photos** box before picking files (it applies to that batch), or add/edit it
+later by opening a photo and using **Save note**. The gallery search matches
+notes too.
+
+## SSSC-ready downloads
+
+Uploads are unrestricted, but a converted copy is prepared for SSSC automatically
+(photos ≤ 6 MB as JPG, videos ≤ 200 MB as MP4). Open a photo/video and use
+**Download for SSSC**; the plain **Download** still gives the original.
+
+- Conversion runs in the background right after upload (ffmpeg), so downloads
+  are instant once ready.
+- ffmpeg is bundled with the installer under `runtime\ffmpeg\`; if missing, the
+  server downloads it once automatically.
+- Tunable via environment variables: `SSSC_PHOTO_MAX_MB` (6),
+  `SSSC_VIDEO_MAX_MB` (200), `SSSC_IMAGE_MAX_EDGE` (2560), `SSSC_JPEG_QUALITY`
+  (4), `SSSC_ENABLED` (1), `FFMPEG_PATH`.
+
 ## Deploy to another shop PC
 
 Build a self-contained installer kit (bundles a portable Node runtime, so the

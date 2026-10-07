@@ -47,6 +47,7 @@
 
   <main>
     <section class="view active" id="view-upload">
+      <textarea id="batchNote" class="batch-note" rows="2" placeholder="Note for these photos (optional)"></textarea>
       <div class="dropzone" id="dropzone">
         <input type="file" id="fileInput" accept="image/*,video/*" multiple hidden>
         <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
@@ -126,8 +127,16 @@
     <button class="modal-close" id="modalClose" type="button">✕</button>
     <div class="modal-media" id="modalMedia"></div>
     <div class="modal-meta" id="modalMeta"></div>
+    <div class="modal-note">
+      <label for="modalNote">Note</label>
+      <textarea id="modalNote" rows="2" placeholder="Add a note (optional)"></textarea>
+      <div class="modal-note-actions">
+        <button class="btn small" id="modalSaveNote" type="button">Save note</button>
+      </div>
+    </div>
     <div class="modal-actions">
       <a class="btn" id="modalDownload" download>Download</a>
+      <a class="btn ghost" id="modalSssc" download>Download for SSSC</a>
       <button class="btn ghost danger" id="modalDelete" type="button">Delete</button>
     </div>
   </div>

@@ -8,6 +8,7 @@ const { execFile } = require("child_process");
 const express = require("express");
 const multer = require("multer");
 const QRCode = require("qrcode");
+const { createConverter } = require("./lib/converter");
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 const HOST = process.env.HOST || "0.0.0.0";
@@ -17,6 +18,8 @@ const MAX_UPLOAD_BYTES =
 const ROOT = __dirname;
 const DATA_DIR = path.join(ROOT, "data");
 const UPLOAD_DIR = path.join(DATA_DIR, "uploads");
+const SSSC_DIR = path.join(DATA_DIR, "sssc");
+const RUNTIME_DIR = path.join(ROOT, "runtime");
 const DB_FILE = path.join(DATA_DIR, "db.json");
 const PUBLIC_DIR = path.join(ROOT, "public");
 
@@ -63,6 +66,21 @@ function writeDb() {
   fs.renameSync(tmp, DB_FILE);
 }
 
+const converter = createConverter({
+  uploadDir: UPLOAD_DIR,
+  ssscDir: SSSC_DIR,
+  runtimeDir: RUNTIME_DIR,
+  onSave: writeDb,
+  log: (m) => console.log(m),
+});
+
+// Queue any media that isn't converted yet (e.g. after a restart or upgrade).
+for (const record of db.media) {
+  if (!record.sssc || record.sssc.status !== "ready") {
+    converter.enqueue(record);
+  }
+}
+
 function safeExtension(originalName) {
   const ext = path.extname(originalName || "").toLowerCase();
   return /^\.[a-z0-9]{1,6}$/.test(ext) ? ext : "";
@@ -96,6 +114,14 @@ function cleanEmployeeId(value) {
     .trim()
     .replace(/[^\w .-]/g, "")
     .slice(0, 40);
+}
+
+function cleanNote(value) {
+  return String(value || "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f]/g, "")
+    .trim()
+    .slice(0, 500);
 }
 
 function lanAddresses() {
@@ -345,6 +371,7 @@ app.post("/api/upload", (req, res) => {
       return res.status(400).json({ error: "An employee ID is required" });
     }
 
+    const note = cleanNote(req.body.note);
     const saved = (req.files || []).map((f) => {
       const record = {
         id: crypto.randomUUID(),
@@ -353,6 +380,7 @@ app.post("/api/upload", (req, res) => {
         mime: f.mimetype,
         size: f.size,
         employeeId,
+        note,
         uploadedAt: new Date().toISOString(),
       };
       db.media.push(record);
@@ -360,8 +388,46 @@ app.post("/api/upload", (req, res) => {
     });
 
     if (saved.length) writeDb();
+    for (const record of saved) converter.enqueue(record);
     res.json({ uploaded: saved, count: saved.length });
   });
+});
+
+app.get("/api/media/:id", (req, res) => {
+  const record = db.media.find((m) => m.id === req.params.id);
+  if (!record) return res.status(404).json({ error: "Not found" });
+  res.json({ media: record });
+});
+
+app.patch("/api/media/:id", (req, res) => {
+  const record = db.media.find((m) => m.id === req.params.id);
+  if (!record) return res.status(404).json({ error: "Not found" });
+  record.note = cleanNote(req.body && req.body.note);
+  writeDb();
+  res.json({ media: record });
+});
+
+app.post("/api/media/:id/sssc", (req, res) => {
+  const record = db.media.find((m) => m.id === req.params.id);
+  if (!record) return res.status(404).json({ error: "Not found" });
+  converter.enqueue(record);
+  res.json({ queued: true });
+});
+
+app.get("/api/media/:id/sssc", (req, res) => {
+  const record = db.media.find((m) => m.id === req.params.id);
+  if (!record) return res.status(404).json({ error: "Not found" });
+  const s = record.sssc;
+  if (!s || s.status !== "ready") {
+    return res.status(409).json({ status: (s && s.status) || "pending", error: s && s.error });
+  }
+  const outPath = converter.outputPathFor(record);
+  if (!outPath || !fs.existsSync(outPath)) {
+    return res.status(409).json({ status: "pending" });
+  }
+  const ext = s.ext || path.extname(record.originalName || "") || "";
+  const base = path.basename(record.originalName || record.storedName, path.extname(record.originalName || ""));
+  res.download(outPath, `${base}-sssc.${ext}`);
 });
 
 app.delete("/api/media/:id", (req, res) => {
@@ -369,6 +435,7 @@ app.delete("/api/media/:id", (req, res) => {
   if (idx === -1) return res.status(404).json({ error: "Not found" });
   const [record] = db.media.splice(idx, 1);
   writeDb();
+  converter.removeOutput(record);
   fs.unlink(path.join(UPLOAD_DIR, record.storedName), () => {});
   res.json({ deleted: record.id });
 });

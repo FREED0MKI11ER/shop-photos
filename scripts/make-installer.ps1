@@ -24,7 +24,7 @@ New-Item -ItemType Directory -Force -Path $Cache | Out-Null
 # --- 1. Copy application files ---
 $appItems = @(
   "server.js", "package.json", "package-lock.json", "README.md", "VERSION",
-  "public", "service", "scripts", "updater", "node_modules"
+  "public", "lib", "service", "scripts", "updater", "node_modules"
 )
 foreach ($item in $appItems) {
   $src = Join-Path $Root $item
@@ -76,7 +76,29 @@ if (-not $SkipNode) {
   Write-Host "  Skipping Node runtime (-SkipNode)." -ForegroundColor Yellow
 }
 
-# --- 3. Copy installer scripts ---
+# --- 3. Bundle ffmpeg (for SSSC conversion) ---
+$ffDestDir = Join-Path $Stage "runtime\ffmpeg"
+New-Item -ItemType Directory -Force -Path $ffDestDir | Out-Null
+$ffLocal = Join-Path $Root "runtime\ffmpeg\ffmpeg.exe"
+if (Test-Path $ffLocal) {
+  Copy-Item $ffLocal (Join-Path $ffDestDir "ffmpeg.exe") -Force
+  Write-Host "  Bundled ffmpeg (from local runtime)."
+} else {
+  Write-Host "  Downloading ffmpeg..."
+  $ffZip = Join-Path $Cache "ffmpeg.zip"
+  if (-not (Test-Path $ffZip)) {
+    Invoke-WebRequest "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $ffZip
+  }
+  $ffEx = Join-Path $Cache "ffmpeg-ex"
+  if (Test-Path $ffEx) { Remove-Item -Recurse -Force $ffEx }
+  Expand-Archive -Path $ffZip -DestinationPath $ffEx -Force
+  $found = Get-ChildItem $ffEx -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+  if (-not $found) { throw "ffmpeg.exe not found in downloaded archive" }
+  Copy-Item $found.FullName (Join-Path $ffDestDir "ffmpeg.exe") -Force
+  Write-Host "  Bundled ffmpeg (downloaded)."
+}
+
+# --- 4. Copy installer scripts ---
 $installerItems = @(
   "install.ps1", "install.bat", "uninstall.ps1", "uninstall.bat", "README-INSTALL.txt"
 )
@@ -87,12 +109,12 @@ foreach ($f in $installerItems) {
 }
 Write-Host "  Added installer scripts."
 
-# --- 4. Sanity checks ---
+# --- 5. Sanity checks ---
 $dataLeak = Test-Path (Join-Path $Stage "data")
 $daemonLeak = Test-Path (Join-Path $Stage "daemon")
 if ($dataLeak -or $daemonLeak) { throw "Kit contains data/ or daemon/ - aborting." }
 
-# --- 5. Zip ---
+# --- 6. Zip ---
 if (Test-Path $ZipPath) { Remove-Item -Force $ZipPath }
 Write-Host "  Compressing..."
 Compress-Archive -Path (Join-Path $Stage "*") -DestinationPath $ZipPath -Force

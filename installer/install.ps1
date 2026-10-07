@@ -78,7 +78,7 @@ Remove-Item -Recurse -Force (Join-Path $InstallDir "daemon") -ErrorAction Silent
 
 $items = @(
   "server.js", "package.json", "package-lock.json", "VERSION",
-  "public", "service", "scripts", "updater", "node_modules", "runtime"
+  "public", "lib", "service", "scripts", "updater", "node_modules", "runtime"
 )
 foreach ($item in $items) {
   $src = Join-Path $Source $item

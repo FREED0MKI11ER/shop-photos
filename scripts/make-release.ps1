@@ -54,7 +54,7 @@ New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
 $appItems = @(
   "server.js", "package.json", "package-lock.json",
-  "public", "node_modules", "service", "scripts", "updater"
+  "public", "lib", "node_modules", "service", "scripts", "updater"
 )
 $exclude = @("share.cred", "admin.cred", "update.log", "admin.sessions.json")
 

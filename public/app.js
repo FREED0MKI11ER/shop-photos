@@ -126,17 +126,21 @@ dropzone.addEventListener("drop", (e) => {
 
 function addFiles(fileList) {
   const files = Array.from(fileList || []);
+  const note = ($("batchNote").value || "").trim();
+  let added = 0;
   for (const file of files) {
     const isMedia = /^image\//.test(file.type) || /^video\//.test(file.type);
     if (!isMedia) {
       toast(`Skipped ${file.name}: not a photo or video`, true);
       continue;
     }
-    state.queue.push({ file, status: "queued", progress: 0, error: null });
+    state.queue.push({ file, note, status: "queued", progress: 0, error: null });
+    added++;
   }
   fileInput.value = "";
   photoInput.value = "";
   videoInput.value = "";
+  if (added && note) $("batchNote").value = "";
   renderQueue();
   if (state.queue.some((q) => q.status === "queued")) uploadQueue();
 }
@@ -198,6 +202,7 @@ function uploadQueue() {
 
   const form = new FormData();
   form.append("employeeId", state.employeeId);
+  if (next.note) form.append("note", next.note);
   form.append("files", next.file, next.file.name);
 
   const xhr = new XMLHttpRequest();
@@ -294,7 +299,8 @@ function filteredMedia() {
     if (emp && m.employeeId !== emp) return false;
     if (type === "image" && !/^image\//.test(m.mime)) return false;
     if (type === "video" && !/^video\//.test(m.mime)) return false;
-    if (search && !m.originalName.toLowerCase().includes(search)) return false;
+    if (search && !m.originalName.toLowerCase().includes(search) &&
+        !(m.note || "").toLowerCase().includes(search)) return false;
     return true;
   });
 }
@@ -349,12 +355,111 @@ function openModal(id) {
     <div><b>${escapeHtml(m.originalName)}</b></div>
     <div>Uploaded by <b>${escapeHtml(m.employeeId)}</b> · ${formatDate(m.uploadedAt)}</div>
     <div>${formatBytes(m.size)}</div>`;
+  $("modalNote").value = m.note || "";
   $("modalDownload").href = url;
   $("modalDownload").setAttribute("download", m.originalName);
+  renderSsscButton(m);
   $("modal").hidden = false;
 }
 
+let ssscPoll = null;
+function stopSsscPoll() {
+  if (ssscPoll) {
+    clearInterval(ssscPoll);
+    ssscPoll = null;
+  }
+}
+
+function renderSsscButton(m) {
+  const btn = $("modalSssc");
+  const s = m.sssc || { status: "pending" };
+  const id = encodeURIComponent(m.id);
+  if (s.status === "ready") {
+    btn.classList.remove("disabled");
+    btn.href = `/api/media/${id}/sssc`;
+    const base = (m.originalName || m.storedName || "file").replace(/\.[^.]+$/, "");
+    btn.setAttribute("download", `${base}-sssc.${s.ext || "bin"}`);
+    btn.textContent = "Download for SSSC";
+    stopSsscPoll();
+  } else if (s.status === "error") {
+    btn.classList.add("disabled");
+    btn.removeAttribute("href");
+    btn.textContent = "SSSC conversion failed — click to retry";
+    stopSsscPoll();
+  } else if (s.status === "disabled") {
+    btn.classList.add("disabled");
+    btn.removeAttribute("href");
+    btn.textContent = "SSSC conversion disabled";
+    stopSsscPoll();
+  } else {
+    btn.classList.add("disabled");
+    btn.removeAttribute("href");
+    btn.textContent = "Preparing SSSC file…";
+    startSsscPoll(m);
+  }
+}
+
+function startSsscPoll(m) {
+  if (ssscPoll) return;
+  ssscPoll = setInterval(async () => {
+    if (!state.current || state.current.id !== m.id || $("modal").hidden) {
+      stopSsscPoll();
+      return;
+    }
+    try {
+      const res = await fetch("/api/media/" + encodeURIComponent(m.id), { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      Object.assign(m, data.media);
+      const idx = state.media.findIndex((x) => x.id === m.id);
+      if (idx >= 0) state.media[idx] = m;
+      renderSsscButton(m);
+      renderGallery();
+    } catch {
+      /* keep polling */
+    }
+  }, 3000);
+}
+
+$("modalSssc").addEventListener("click", async (e) => {
+  const m = state.current;
+  if (!m) return;
+  const status = (m.sssc || {}).status;
+  if (status === "ready") return;
+  e.preventDefault();
+  if (status === "error") {
+    try {
+      await fetch("/api/media/" + encodeURIComponent(m.id) + "/sssc", { method: "POST" });
+      m.sssc = { status: "pending" };
+      renderSsscButton(m);
+    } catch {
+      /* ignore */
+    }
+  }
+});
+
+$("modalSaveNote").addEventListener("click", async () => {
+  const m = state.current;
+  if (!m) return;
+  try {
+    const res = await fetch("/api/media/" + encodeURIComponent(m.id), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note: $("modalNote").value }),
+    });
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    m.note = data.media.note;
+    const idx = state.media.findIndex((x) => x.id === m.id);
+    if (idx >= 0) state.media[idx].note = m.note;
+    toast("Note saved");
+  } catch {
+    toast("Could not save note", true);
+  }
+});
+
 function closeModal() {
+  stopSsscPoll();
   $("modal").hidden = true;
   $("modalMedia").innerHTML = "";
   state.current = null;

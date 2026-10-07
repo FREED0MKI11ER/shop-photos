@@ -16,7 +16,7 @@ if (-not $ConfigFile) { $ConfigFile = Join-Path $PSScriptRoot "config.json" }
 
 $logFile = Join-Path $PSScriptRoot "update.log"
 $serviceId = ($ServiceName -replace "[^\w]", "").ToLower() + ".exe"
-$dirItems = @("public", "node_modules", "service", "scripts")
+$dirItems = @("public", "lib", "node_modules", "service", "scripts")
 $fileItems = @("server.js", "package.json", "package-lock.json", "VERSION")
 $appItems = $dirItems + $fileItems + @("updater")
 
