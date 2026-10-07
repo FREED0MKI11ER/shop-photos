@@ -87,10 +87,8 @@ LAN setup does not use. The shortcut still gives a home-screen icon.
 
 ## Notes
 
-Each photo/video can have an optional note. Type one in the **Note for these
-photos** box before picking files (it applies to that batch), or add/edit it
-later by opening a photo and using **Save note**. The gallery search matches
-notes too.
+Each photo/video can have an optional note. Open a photo in the viewer and add or
+edit it with **Save note**. The gallery search matches notes too.
 
 ## SSSC-ready downloads
 

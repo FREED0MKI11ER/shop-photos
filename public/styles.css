@@ -372,21 +372,6 @@ body::before {
 .modal-note-actions { margin-top: 8px; }
 .btn.disabled { opacity: .5; pointer-events: none; }
 
-.batch-note {
-  width: 100%;
-  font: inherit;
-  font-size: 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px 14px;
-  color: var(--text);
-  outline: none;
-  resize: vertical;
-  margin-bottom: 12px;
-}
-.batch-note:focus { border-color: var(--accent); }
-
 /* ---------- Toast ---------- */
 .toast {
   position: fixed;

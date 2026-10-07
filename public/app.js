@@ -126,21 +126,17 @@ dropzone.addEventListener("drop", (e) => {
 
 function addFiles(fileList) {
   const files = Array.from(fileList || []);
-  const note = ($("batchNote").value || "").trim();
-  let added = 0;
   for (const file of files) {
     const isMedia = /^image\//.test(file.type) || /^video\//.test(file.type);
     if (!isMedia) {
       toast(`Skipped ${file.name}: not a photo or video`, true);
       continue;
     }
-    state.queue.push({ file, note, status: "queued", progress: 0, error: null });
-    added++;
+    state.queue.push({ file, status: "queued", progress: 0, error: null });
   }
   fileInput.value = "";
   photoInput.value = "";
   videoInput.value = "";
-  if (added && note) $("batchNote").value = "";
   renderQueue();
   if (state.queue.some((q) => q.status === "queued")) uploadQueue();
 }
@@ -202,7 +198,6 @@ function uploadQueue() {
 
   const form = new FormData();
   form.append("employeeId", state.employeeId);
-  if (next.note) form.append("note", next.note);
   form.append("files", next.file, next.file.name);
 
   const xhr = new XMLHttpRequest();
