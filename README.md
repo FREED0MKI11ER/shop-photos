@@ -162,7 +162,7 @@ gh auth login
 gh repo create shop-photos --public --source=. --push
 ```
 
-**One-time on each shop PC** — point it at the repo and set the admin password:
+**One-time on shop PC** — point it at the repo and set the admin password:
 
 ```
 powershell -ExecutionPolicy Bypass -File updater\install-updater.ps1 -Repo <owner>/shop-photos
