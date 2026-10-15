@@ -86,6 +86,7 @@
           <button class="seg" id="viewFlat" type="button">All</button>
         </div>
         <button class="btn ghost small" id="refreshBtn" type="button">Refresh</button>
+        <button class="btn ghost small" id="selectToggle" type="button">Select</button>
       </div>
       <div class="gallery" id="gallery"></div>
       <div class="empty" id="galleryEmpty" hidden>No media yet. Upload something!</div>
@@ -141,6 +142,17 @@
       </div>
     </section>
   </main>
+</div>
+
+<div class="bulk-bar" id="bulkBar" hidden>
+  <span class="bulk-count" id="bulkCount">0 selected</span>
+  <div class="bulk-actions">
+    <button class="btn small" id="bulkDlSssc" type="button">Download SSSC</button>
+    <button class="btn ghost small" id="bulkDlOrig" type="button">Download originals</button>
+    <button class="btn ghost small" id="bulkRo" type="button">Reassign RO</button>
+    <button class="btn ghost danger small" id="bulkTrash" type="button">Move to trash</button>
+    <button class="link" id="bulkCancel" type="button">Cancel</button>
+  </div>
 </div>
 
 <div class="modal" id="modal" hidden>

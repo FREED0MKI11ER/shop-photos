@@ -10,6 +10,8 @@ const state = {
   queue: [],
   current: null,
   viewMode: "grouped",
+  selectMode: false,
+  selected: new Set(),
 };
 
 function escapeHtml(s) {
@@ -357,8 +359,10 @@ function cardHtml(m) {
   const thumb = isVideo
     ? `<video class="thumb" src="/files/${encodeURIComponent(m.storedName)}" preload="metadata" muted></video>`
     : `<img class="thumb" loading="lazy" src="${imgSrc}" alt="">`;
+  const selected = state.selectMode && state.selected.has(m.id);
   return `
-    <div class="card" data-id="${m.id}">
+    <div class="card${selected ? " selected" : ""}" data-id="${m.id}">
+      ${state.selectMode ? `<span class="card-check">${selected ? "✓" : ""}</span>` : ""}
       ${thumb}
       ${isVideo ? '<span class="play">▶ Video</span>' : ""}
       <div class="info">
@@ -464,7 +468,10 @@ function renderGallery() {
     );
   }
   grid.querySelectorAll(".card").forEach((card) =>
-    card.addEventListener("click", () => openModal(card.dataset.id))
+    card.addEventListener("click", () => {
+      if (state.selectMode) toggleSelect(card.dataset.id);
+      else openModal(card.dataset.id);
+    })
   );
 }
 
@@ -489,6 +496,151 @@ $("viewFlat").addEventListener("click", () => {
 );
 $("searchBox").addEventListener("input", renderGallery);
 $("refreshBtn").addEventListener("click", loadMedia);
+
+/* ---------------- Bulk select ---------------- */
+function setSelectMode(on) {
+  state.selectMode = on;
+  if (!on) state.selected.clear();
+  const t = $("selectToggle");
+  if (t) {
+    t.classList.toggle("active", on);
+    t.textContent = on ? "Cancel" : "Select";
+  }
+  updateBulkBar();
+  renderGallery();
+}
+
+function updateBulkBar() {
+  const bar = $("bulkBar");
+  if (!bar) return;
+  const n = state.selected.size;
+  bar.hidden = !state.selectMode;
+  if (!state.selectMode) return;
+  $("bulkCount").textContent = n + " selected";
+  ["bulkDlSssc", "bulkDlOrig", "bulkRo", "bulkTrash"].forEach((id) => {
+    const b = $(id);
+    if (b) b.disabled = n === 0;
+  });
+}
+
+function toggleSelect(id) {
+  if (state.selected.has(id)) state.selected.delete(id);
+  else state.selected.add(id);
+  const card = document.querySelector('.card[data-id="' + id + '"]');
+  if (card) {
+    const on = state.selected.has(id);
+    card.classList.toggle("selected", on);
+    const chk = card.querySelector(".card-check");
+    if (chk) chk.textContent = on ? "✓" : "";
+  }
+  updateBulkBar();
+}
+
+async function bulkAction(action, extra) {
+  const ids = [...state.selected];
+  if (!ids.length) return;
+  const res = await fetch("/api/media/bulk", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Employee-Id": state.employeeId },
+    body: JSON.stringify(Object.assign({ ids, action }, extra || {})),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Failed");
+  return data;
+}
+
+async function downloadZip(ids, kind, btn) {
+  const label = btn ? btn.textContent : "";
+  if (btn) btn.disabled = true;
+  const deadline = Date.now() + 180000;
+  try {
+    while (Date.now() < deadline) {
+      const res = await fetch("/api/media/zip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids, kind }),
+      });
+      if (res.status === 200) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `shop-photos-${kind}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        return;
+      }
+      if (res.status === 409) {
+        const d = await res.json().catch(() => ({}));
+        if (btn) btn.textContent = `Preparing ${(d.total || 0) - (d.pending || 0)}/${d.total || 0}…`;
+      } else {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Download failed");
+      }
+      await new Promise((r) => setTimeout(r, 2500));
+    }
+    toast("Still preparing — try again shortly", true);
+  } finally {
+    if (btn) {
+      btn.textContent = label;
+      btn.disabled = false;
+    }
+  }
+}
+
+$("selectToggle").addEventListener("click", () => setSelectMode(!state.selectMode));
+$("bulkCancel").addEventListener("click", () => setSelectMode(false));
+
+$("bulkTrash").addEventListener("click", async () => {
+  if (!state.selected.size) return;
+  if (!confirm(`Move ${state.selected.size} item(s) to trash?`)) return;
+  try {
+    await bulkAction("trash");
+    toast("Moved to trash");
+    setSelectMode(false);
+    loadMedia();
+  } catch (err) {
+    toast(err.message || "Failed", true);
+  }
+});
+
+$("bulkRo").addEventListener("click", async () => {
+  if (!state.selected.size) return;
+  const ro = (prompt("Enter the 6-digit RO number for the selected photos:") || "")
+    .replace(/\D/g, "")
+    .slice(0, 6);
+  if (!/^\d{6}$/.test(ro)) {
+    toast("A 6-digit RO number is required", true);
+    return;
+  }
+  try {
+    await bulkAction("ro", { roNumber: ro });
+    toast("RO updated");
+    setSelectMode(false);
+    loadMedia();
+  } catch (err) {
+    toast(err.message || "Failed", true);
+  }
+});
+
+$("bulkDlSssc").addEventListener("click", async () => {
+  if (!state.selected.size) return;
+  try {
+    await downloadZip([...state.selected], "sssc", $("bulkDlSssc"));
+  } catch (err) {
+    toast(err.message || "Download failed", true);
+  }
+});
+$("bulkDlOrig").addEventListener("click", async () => {
+  if (!state.selected.size) return;
+  try {
+    await downloadZip([...state.selected], "original", $("bulkDlOrig"));
+  } catch (err) {
+    toast(err.message || "Download failed", true);
+  }
+});
 
 /* ---------------- Modal ---------------- */
 function openModal(id) {

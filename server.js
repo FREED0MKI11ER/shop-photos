@@ -686,6 +686,119 @@ app.post("/api/trash/empty", requireAdmin, (req, res) => {
   res.json({ purged: trashed.length });
 });
 
+app.post("/api/media/bulk", (req, res) => {
+  const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids : [];
+  const action = req.body && req.body.action;
+  if (!ids.length) return res.status(400).json({ error: "No items selected" });
+  const actor = cleanEmployeeId(req.get("x-employee-id"));
+  let n = 0;
+
+  if (action === "trash") {
+    for (const id of ids) {
+      const record = db.media.find((m) => m.id === id);
+      if (!record || record.deletedAt) continue;
+      record.deletedAt = new Date().toISOString();
+      try {
+        fs.renameSync(
+          path.join(UPLOAD_DIR, record.storedName),
+          path.join(TRASH_DIR, record.storedName)
+        );
+      } catch (err) {
+        if (err.code !== "ENOENT") console.error("trash move failed:", err.message);
+      }
+      converter.removeOutput(record);
+      audit.write({
+        action: "trash",
+        id: record.id,
+        originalName: record.originalName,
+        roNumber: record.roNumber,
+        employeeId: actor,
+        ip: req.ip,
+      });
+      n++;
+    }
+    writeDb();
+  } else if (action === "ro") {
+    const ro = cleanRo6(req.body.roNumber);
+    if (!/^\d{6}$/.test(ro)) {
+      return res.status(400).json({ error: "A 6-digit RO number is required" });
+    }
+    for (const id of ids) {
+      const record = db.media.find((m) => m.id === id);
+      if (!record) continue;
+      record.roNumber = ro;
+      audit.write({
+        action: "edit",
+        id: record.id,
+        originalName: record.originalName,
+        roNumber: ro,
+        employeeId: actor,
+        fields: ["roNumber"],
+        ip: req.ip,
+      });
+      n++;
+    }
+    writeDb();
+  } else {
+    return res.status(400).json({ error: "Unknown action" });
+  }
+
+  res.json({ updated: n });
+});
+
+app.post("/api/media/zip", (req, res) => {
+  const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids : [];
+  const kind = req.body && req.body.kind === "original" ? "original" : "sssc";
+  const items = ids
+    .map((id) => db.media.find((m) => m.id === id))
+    .filter((m) => m && !m.deletedAt);
+  if (!items.length) return res.status(400).json({ error: "No items selected" });
+
+  if (kind === "sssc") {
+    const notReady = items.filter((m) => !m.sssc || m.sssc.status !== "ready");
+    if (notReady.length) {
+      for (const m of notReady) converter.enqueue(m);
+      return res
+        .status(409)
+        .json({ status: "preparing", pending: notReady.length, total: items.length });
+    }
+  }
+
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader("Content-Disposition", `attachment; filename="shop-photos-${kind}.zip"`);
+  const archive = archiver("zip", { zlib: { level: 5 } });
+  archive.on("error", (err) => {
+    console.error("zip error:", err.message);
+    try {
+      res.destroy(err);
+    } catch (e) {}
+  });
+  archive.pipe(res);
+
+  const used = new Set();
+  for (const m of items) {
+    const outPath =
+      kind === "sssc" ? converter.outputPathFor(m) : path.join(UPLOAD_DIR, m.storedName);
+    if (!outPath || !fs.existsSync(outPath)) continue;
+    const prefix = m.roNumber ? `${m.roNumber}-` : "";
+    let name;
+    if (kind === "sssc") {
+      const ext = (m.sssc && m.sssc.ext) || path.extname(m.originalName || "") || "";
+      const base = path.basename(
+        m.originalName || m.storedName,
+        path.extname(m.originalName || "")
+      );
+      name = `${prefix}${base}-sssc.${ext}`;
+    } else {
+      name = `${prefix}${m.originalName || m.storedName}`;
+    }
+    if (used.has(name)) name = `${prefix}${String(m.id).slice(0, 8)}-${m.originalName || m.storedName}`;
+    used.add(name);
+    archive.file(outPath, { name });
+  }
+  archive.finalize();
+});
+
 app.use(
   "/files",
   express.static(UPLOAD_DIR, {
