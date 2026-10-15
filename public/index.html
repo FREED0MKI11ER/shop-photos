@@ -48,9 +48,9 @@
   <main>
     <section class="view active" id="view-upload">
       <div class="ro-block" id="roBlock">
-        <label class="ro-label" for="roInput">RO number <span class="ro-req">required</span></label>
-        <input id="roInput" class="ro-input" placeholder="Enter the RO number" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="20">
-        <div class="ro-hint" id="roHint">Enter the RO number to start uploading.</div>
+        <label class="ro-label" for="roInput">RO number <span class="ro-req">6 digits</span></label>
+        <input id="roInput" class="ro-input" placeholder="6-digit RO number" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="6">
+        <div class="ro-hint" id="roHint">Enter the 6-digit RO number to start uploading.</div>
       </div>
       <div class="dropzone" id="dropzone">
         <input type="file" id="fileInput" accept="image/*,video/*" multiple hidden>

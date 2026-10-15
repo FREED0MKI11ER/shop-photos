@@ -58,19 +58,19 @@ function toast(msg, isError) {
 function currentRo() {
   const el = $("roInput");
   if (!el) return "";
-  return (el.value || "").trim().toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 20);
+  return (el.value || "").replace(/\D/g, "").slice(0, 6);
 }
 
 function requireRo() {
-  if (currentRo()) return true;
+  if (/^\d{6}$/.test(currentRo())) return true;
   const ro = $("roInput");
   if (ro) ro.focus();
-  toast("Enter an RO number first", true);
+  toast("Enter the 6-digit RO number first", true);
   return false;
 }
 
 function updateRoState() {
-  const has = !!currentRo();
+  const has = /^\d{6}$/.test(currentRo());
   ["pickBtn", "shootPhotoBtn", "shootVideoBtn"].forEach((id) => {
     const b = $(id);
     if (!b) return;

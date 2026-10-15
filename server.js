@@ -172,6 +172,10 @@ function cleanRo(value) {
     .slice(0, 20);
 }
 
+function cleanRo6(value) {
+  return String(value || "").replace(/\D/g, "").slice(0, 6);
+}
+
 function lanAddresses() {
   const out = [];
   const ifaces = os.networkInterfaces();
@@ -427,10 +431,10 @@ app.post("/api/upload", (req, res) => {
       return res.status(400).json({ error: "An employee ID is required" });
     }
 
-    const roNumber = cleanRo(req.body.roNumber);
-    if (!roNumber) {
+    const roNumber = cleanRo6(req.body.roNumber);
+    if (!/^\d{6}$/.test(roNumber)) {
       for (const f of req.files || []) fs.unlink(f.path, () => {});
-      return res.status(400).json({ error: "An RO number is required" });
+      return res.status(400).json({ error: "A 6-digit RO number is required" });
     }
 
     const note = cleanNote(req.body.note);
@@ -538,8 +542,10 @@ app.get("/api/media/:id/sssc", (req, res) => {
 });
 
 app.get("/api/ro/:ro/sssc/status", (req, res) => {
-  const ro = cleanRo(req.params.ro);
-  const items = db.media.filter((m) => !m.deletedAt && (m.roNumber || "") === ro);
+  const ro = String(req.params.ro || "").trim();
+  const items = db.media.filter(
+    (m) => !m.deletedAt && (m.roNumber || "").toUpperCase() === ro.toUpperCase()
+  );
   let ready = 0;
   let pending = 0;
   let error = 0;
@@ -556,8 +562,10 @@ app.get("/api/ro/:ro/sssc/status", (req, res) => {
 });
 
 app.get("/api/ro/:ro/sssc.zip", (req, res) => {
-  const ro = cleanRo(req.params.ro);
-  const items = db.media.filter((m) => !m.deletedAt && (m.roNumber || "") === ro);
+  const ro = String(req.params.ro || "").trim();
+  const items = db.media.filter(
+    (m) => !m.deletedAt && (m.roNumber || "").toUpperCase() === ro.toUpperCase()
+  );
   if (!items.length) return res.status(404).json({ error: "No photos for this RO" });
   const notReady = items.filter((m) => !m.sssc || m.sssc.status !== "ready");
   if (notReady.length) {
