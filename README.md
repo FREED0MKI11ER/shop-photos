@@ -88,7 +88,20 @@ LAN setup does not use. The shortcut still gives a home-screen icon.
 ## Notes
 
 Each photo/video can have an optional note. Open a photo in the viewer and add or
-edit it with **Save note**. The gallery search matches notes too.
+edit it with **Save**. The gallery search matches notes too.
+
+## RO numbers
+
+Uploads require an **RO number** (alphanumeric, up to 20 chars). Enter it above the
+dropzone before picking files; it's remembered on the device. The gallery **groups
+by RO** by default (toggle **By RO** / **All**). The RO is editable in the viewer
+and is included in the SSSC download filename (e.g. `RO12345-IMG_1234-sssc.jpg`).
+
+## Deleting & trash
+
+Deleting a photo moves it to the **Trash** (Admin tab, behind the admin password)
+rather than erasing it — restore it or delete it permanently. Trash auto-empties
+after **30 days** (`trashDays` in `site.json`, or the `TRASH_DAYS` env).
 
 ## SSSC-ready downloads
 

@@ -18,6 +18,7 @@ const ROOT = __dirname;
 const DATA_DIR = path.join(ROOT, "data");
 const UPLOAD_DIR = path.join(DATA_DIR, "uploads");
 const SSSC_DIR = path.join(DATA_DIR, "sssc");
+const TRASH_DIR = path.join(DATA_DIR, "trash");
 const RUNTIME_DIR = path.join(ROOT, "runtime");
 const DB_FILE = path.join(DATA_DIR, "db.json");
 const PUBLIC_DIR = path.join(ROOT, "public");
@@ -37,6 +38,8 @@ try {
 const PORT =
   parseInt(SITE_CONFIG.port, 10) || parseInt(process.env.PORT, 10) || 3000;
 const PUBLIC_URL = String(SITE_CONFIG.publicUrl || "").replace(/\/+$/, "");
+const TRASH_DAYS =
+  parseInt(SITE_CONFIG.trashDays, 10) || parseInt(process.env.TRASH_DAYS, 10) || 30;
 
 const UPDATER_DIR = path.join(ROOT, "updater");
 const ADMIN_CRED_FILE = path.join(UPDATER_DIR, "admin.cred");
@@ -56,7 +59,7 @@ try {
   // VERSION file is optional; fall back to a placeholder.
 }
 
-for (const dir of [DATA_DIR, UPLOAD_DIR]) {
+for (const dir of [DATA_DIR, UPLOAD_DIR, TRASH_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
@@ -91,10 +94,28 @@ const converter = createConverter({
 
 // Queue any media that isn't converted yet (e.g. after a restart or upgrade).
 for (const record of db.media) {
-  if (!record.sssc || record.sssc.status !== "ready") {
+  if (!record.deletedAt && (!record.sssc || record.sssc.status !== "ready")) {
     converter.enqueue(record);
   }
 }
+
+// Permanently remove trash older than TRASH_DAYS (on startup and every 6 hours).
+function purgeExpiredTrash() {
+  const cutoff = Date.now() - TRASH_DAYS * 24 * 60 * 60 * 1000;
+  const expired = db.media.filter(
+    (m) => m.deletedAt && new Date(m.deletedAt).getTime() < cutoff
+  );
+  if (!expired.length) return;
+  db.media = db.media.filter((m) => !expired.includes(m));
+  writeDb();
+  for (const record of expired) {
+    converter.removeOutput(record);
+    fs.unlink(path.join(TRASH_DIR, record.storedName), () => {});
+  }
+  console.log(`Purged ${expired.length} expired trash item(s).`);
+}
+purgeExpiredTrash();
+setInterval(purgeExpiredTrash, 6 * 60 * 60 * 1000);
 
 function safeExtension(originalName) {
   const ext = path.extname(originalName || "").toLowerCase();
@@ -137,6 +158,14 @@ function cleanNote(value) {
     .replace(/[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f]/g, "")
     .trim()
     .slice(0, 500);
+}
+
+function cleanRo(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9-]/g, "")
+    .slice(0, 20);
 }
 
 function lanAddresses() {
@@ -348,7 +377,7 @@ app.post("/api/admin/update", requireAdmin, async (req, res) => {
 
 app.get("/api/media", (req, res) => {
   const media = db.media
-    .slice()
+    .filter((m) => !m.deletedAt)
     .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
   res.json({ media });
 });
@@ -387,6 +416,12 @@ app.post("/api/upload", (req, res) => {
       return res.status(400).json({ error: "An employee ID is required" });
     }
 
+    const roNumber = cleanRo(req.body.roNumber);
+    if (!roNumber) {
+      for (const f of req.files || []) fs.unlink(f.path, () => {});
+      return res.status(400).json({ error: "An RO number is required" });
+    }
+
     const note = cleanNote(req.body.note);
     const saved = (req.files || []).map((f) => {
       const record = {
@@ -396,6 +431,7 @@ app.post("/api/upload", (req, res) => {
         mime: f.mimetype,
         size: f.size,
         employeeId,
+        roNumber,
         note,
         uploadedAt: new Date().toISOString(),
       };
@@ -418,7 +454,8 @@ app.get("/api/media/:id", (req, res) => {
 app.patch("/api/media/:id", (req, res) => {
   const record = db.media.find((m) => m.id === req.params.id);
   if (!record) return res.status(404).json({ error: "Not found" });
-  record.note = cleanNote(req.body && req.body.note);
+  if (req.body && "note" in req.body) record.note = cleanNote(req.body.note);
+  if (req.body && "roNumber" in req.body) record.roNumber = cleanRo(req.body.roNumber);
   writeDb();
   res.json({ media: record });
 });
@@ -443,17 +480,70 @@ app.get("/api/media/:id/sssc", (req, res) => {
   }
   const ext = s.ext || path.extname(record.originalName || "") || "";
   const base = path.basename(record.originalName || record.storedName, path.extname(record.originalName || ""));
-  res.download(outPath, `${base}-sssc.${ext}`);
+  const prefix = record.roNumber ? `${record.roNumber}-` : "";
+  res.download(outPath, `${prefix}${base}-sssc.${ext}`);
 });
 
 app.delete("/api/media/:id", (req, res) => {
+  const record = db.media.find((m) => m.id === req.params.id);
+  if (!record || record.deletedAt) return res.status(404).json({ error: "Not found" });
+  record.deletedAt = new Date().toISOString();
+  writeDb();
+  try {
+    fs.renameSync(
+      path.join(UPLOAD_DIR, record.storedName),
+      path.join(TRASH_DIR, record.storedName)
+    );
+  } catch (err) {
+    if (err.code !== "ENOENT") console.error("trash move failed:", err.message);
+  }
+  converter.removeOutput(record);
+  res.json({ trashed: record.id });
+});
+
+app.get("/api/trash", requireAdmin, (req, res) => {
+  const media = db.media
+    .filter((m) => m.deletedAt)
+    .sort((a, b) => String(b.deletedAt).localeCompare(String(a.deletedAt)));
+  res.json({ media, days: TRASH_DAYS });
+});
+
+app.post("/api/media/:id/restore", requireAdmin, (req, res) => {
+  const record = db.media.find((m) => m.id === req.params.id);
+  if (!record || !record.deletedAt) return res.status(404).json({ error: "Not found" });
+  try {
+    fs.renameSync(
+      path.join(TRASH_DIR, record.storedName),
+      path.join(UPLOAD_DIR, record.storedName)
+    );
+  } catch (err) {
+    if (err.code !== "ENOENT") console.error("restore move failed:", err.message);
+  }
+  delete record.deletedAt;
+  converter.enqueue(record);
+  res.json({ media: record });
+});
+
+app.delete("/api/media/:id/purge", requireAdmin, (req, res) => {
   const idx = db.media.findIndex((m) => m.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: "Not found" });
   const [record] = db.media.splice(idx, 1);
   writeDb();
   converter.removeOutput(record);
+  fs.unlink(path.join(TRASH_DIR, record.storedName), () => {});
   fs.unlink(path.join(UPLOAD_DIR, record.storedName), () => {});
-  res.json({ deleted: record.id });
+  res.json({ purged: record.id });
+});
+
+app.post("/api/trash/empty", requireAdmin, (req, res) => {
+  const trashed = db.media.filter((m) => m.deletedAt);
+  db.media = db.media.filter((m) => !m.deletedAt);
+  writeDb();
+  for (const record of trashed) {
+    converter.removeOutput(record);
+    fs.unlink(path.join(TRASH_DIR, record.storedName), () => {});
+  }
+  res.json({ purged: trashed.length });
 });
 
 app.use(

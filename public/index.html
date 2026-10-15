@@ -47,6 +47,7 @@
 
   <main>
     <section class="view active" id="view-upload">
+      <input id="roInput" class="ro-input" placeholder="RO number (required)" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="20">
       <div class="dropzone" id="dropzone">
         <input type="file" id="fileInput" accept="image/*,video/*" multiple hidden>
         <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
@@ -75,7 +76,11 @@
           <option value="image">Photos</option>
           <option value="video">Videos</option>
         </select>
-        <input id="searchBox" placeholder="Search filename…">
+        <input id="searchBox" placeholder="Search filename, RO, note…">
+        <div class="view-toggle">
+          <button class="seg active" id="viewGrouped" type="button">By RO</button>
+          <button class="seg" id="viewFlat" type="button">All</button>
+        </div>
         <button class="btn ghost small" id="refreshBtn" type="button">Refresh</button>
       </div>
       <div class="gallery" id="gallery"></div>
@@ -118,6 +123,11 @@
           </div>
           <div class="admin-result" id="adminResult"></div>
           <pre class="admin-log" id="adminLog"></pre>
+          <div class="admin-trash">
+            <h3>Trash</h3>
+            <div class="trash-list" id="trashList"></div>
+            <button class="btn ghost danger small" id="emptyTrashBtn" type="button">Empty trash</button>
+          </div>
           <button class="link" id="adminLogout" type="button">Log out</button>
         </div>
       </div>
@@ -130,17 +140,19 @@
     <button class="modal-close" id="modalClose" type="button">✕</button>
     <div class="modal-media" id="modalMedia"></div>
     <div class="modal-meta" id="modalMeta"></div>
-    <div class="modal-note">
+    <div class="modal-fields">
+      <label for="modalRo">RO number</label>
+      <input id="modalRo" maxlength="20" placeholder="RO number">
       <label for="modalNote">Note</label>
       <textarea id="modalNote" rows="2" placeholder="Add a note (optional)"></textarea>
       <div class="modal-note-actions">
-        <button class="btn small" id="modalSaveNote" type="button">Save note</button>
+        <button class="btn small" id="modalSave" type="button">Save</button>
       </div>
     </div>
     <div class="modal-actions">
       <a class="btn" id="modalDownload" download>Download</a>
       <a class="btn ghost" id="modalSssc" download>Download for SSSC</a>
-      <button class="btn ghost danger" id="modalDelete" type="button">Delete</button>
+      <button class="btn ghost danger" id="modalDelete" type="button">Move to trash</button>
     </div>
   </div>
 </div>

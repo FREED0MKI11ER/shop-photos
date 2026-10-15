@@ -2,6 +2,7 @@
 
 const $ = (id) => document.getElementById(id);
 const ID_KEY = "shop.employeeId";
+const RO_KEY = "shop.roNumber";
 
 const state = {
   employeeId: localStorage.getItem(ID_KEY) || "",
@@ -9,6 +10,7 @@ const state = {
   maxUploadBytes: 2 * 1024 * 1024 * 1024,
   queue: [],
   current: null,
+  viewMode: "grouped",
 };
 
 function escapeHtml(s) {
@@ -54,10 +56,27 @@ function toast(msg, isError) {
 }
 
 /* ---------------- Gate ---------------- */
+function currentRo() {
+  const el = $("roInput");
+  if (!el) return "";
+  return (el.value || "").trim().toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 20);
+}
+
+function updateRoState() {
+  const has = !!currentRo();
+  ["pickBtn", "shootPhotoBtn", "shootVideoBtn"].forEach((id) => {
+    const b = $(id);
+    if (b) b.disabled = !has;
+  });
+}
+
 function showApp() {
   $("gate").hidden = true;
   $("app").hidden = false;
   $("whoChip").textContent = state.employeeId;
+  const ro = $("roInput");
+  if (ro) ro.value = localStorage.getItem(RO_KEY) || "";
+  updateRoState();
   loadMedia();
 }
 
@@ -96,11 +115,22 @@ const fileInput = $("fileInput");
 const photoInput = $("photoInput");
 const videoInput = $("videoInput");
 
+$("roInput").addEventListener("input", () => {
+  const v = currentRo();
+  if ($("roInput").value !== v) $("roInput").value = v;
+  localStorage.setItem(RO_KEY, v);
+  updateRoState();
+});
+
 $("pickBtn").addEventListener("click", () => fileInput.click());
 $("shootPhotoBtn").addEventListener("click", () => photoInput.click());
 $("shootVideoBtn").addEventListener("click", () => videoInput.click());
 dropzone.addEventListener("click", (e) => {
   if (e.target.closest("button")) return;
+  if (!currentRo()) {
+    toast("Enter an RO number first", true);
+    return;
+  }
   fileInput.click();
 });
 
@@ -125,6 +155,11 @@ dropzone.addEventListener("drop", (e) => {
 });
 
 function addFiles(fileList) {
+  const roNumber = currentRo();
+  if (!roNumber) {
+    toast("Enter an RO number before uploading", true);
+    return;
+  }
   const files = Array.from(fileList || []);
   for (const file of files) {
     const isMedia = /^image\//.test(file.type) || /^video\//.test(file.type);
@@ -132,7 +167,7 @@ function addFiles(fileList) {
       toast(`Skipped ${file.name}: not a photo or video`, true);
       continue;
     }
-    state.queue.push({ file, status: "queued", progress: 0, error: null });
+    state.queue.push({ file, roNumber, status: "queued", progress: 0, error: null });
   }
   fileInput.value = "";
   photoInput.value = "";
@@ -198,6 +233,7 @@ function uploadQueue() {
 
   const form = new FormData();
   form.append("employeeId", state.employeeId);
+  if (next.roNumber) form.append("roNumber", next.roNumber);
   form.append("files", next.file, next.file.name);
 
   const xhr = new XMLHttpRequest();
@@ -295,9 +331,53 @@ function filteredMedia() {
     if (type === "image" && !/^image\//.test(m.mime)) return false;
     if (type === "video" && !/^video\//.test(m.mime)) return false;
     if (search && !m.originalName.toLowerCase().includes(search) &&
-        !(m.note || "").toLowerCase().includes(search)) return false;
+        !(m.note || "").toLowerCase().includes(search) &&
+        !(m.roNumber || "").toLowerCase().includes(search)) return false;
     return true;
   });
+}
+
+function cardHtml(m) {
+  const isVideo = /^video\//.test(m.mime);
+  const thumb = isVideo
+    ? `<video class="thumb" src="/files/${encodeURIComponent(m.storedName)}" preload="metadata" muted></video>`
+    : `<img class="thumb" loading="lazy" src="/files/${encodeURIComponent(m.storedName)}" alt="">`;
+  return `
+    <div class="card" data-id="${m.id}">
+      ${thumb}
+      ${isVideo ? '<span class="play">▶ Video</span>' : ""}
+      <div class="info">
+        ${m.roNumber ? `<div class="ro">RO ${escapeHtml(m.roNumber)}</div>` : ""}
+        <div class="who">${escapeHtml(m.employeeId)}</div>
+        <div class="meta">${formatDate(m.uploadedAt)} · ${formatBytes(m.size)}</div>
+      </div>
+    </div>`;
+}
+
+function renderGroups(items) {
+  const groups = new Map();
+  for (const m of items) {
+    const key = m.roNumber || "";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(m);
+  }
+  const arr = [...groups.entries()].map(([ro, list]) => {
+    list.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+    return { ro, list, latest: list[0].uploadedAt };
+  });
+  arr.sort((a, b) => b.latest.localeCompare(a.latest));
+  return arr
+    .map(({ ro, list }) => `
+      <section class="ro-group">
+        <button class="ro-head" type="button">
+          <span class="ro-title">${ro ? "RO " + escapeHtml(ro) : "No RO"}</span>
+          <span class="ro-count">${list.length}</span>
+          <span class="ro-date">${formatDate(list[0].uploadedAt)}</span>
+          <span class="ro-chevron">▾</span>
+        </button>
+        <div class="gallery ro-grid">${list.map(cardHtml).join("")}</div>
+      </section>`)
+    .join("");
 }
 
 function renderGallery() {
@@ -305,30 +385,40 @@ function renderGallery() {
   const grid = $("gallery");
   $("galleryEmpty").hidden = state.media.length !== 0;
   if (state.media.length && !items.length) {
+    grid.className = "gallery";
     grid.innerHTML = '<div class="empty">No matches for these filters.</div>';
     return;
   }
-  grid.innerHTML = items
-    .map((m) => {
-      const isVideo = /^video\//.test(m.mime);
-      const thumb = isVideo
-        ? `<video class="thumb" src="/files/${encodeURIComponent(m.storedName)}" preload="metadata" muted></video>`
-        : `<img class="thumb" loading="lazy" src="/files/${encodeURIComponent(m.storedName)}" alt="">`;
-      return `
-      <div class="card" data-id="${m.id}">
-        ${thumb}
-        ${isVideo ? '<span class="play">▶ Video</span>' : ""}
-        <div class="info">
-          <div class="who">${escapeHtml(m.employeeId)}</div>
-          <div class="meta">${formatDate(m.uploadedAt)} · ${formatBytes(m.size)}</div>
-        </div>
-      </div>`;
-    })
-    .join("");
+  if (state.viewMode === "flat") {
+    grid.className = "gallery";
+    grid.innerHTML = items.map(cardHtml).join("");
+  } else {
+    grid.className = "gallery-grouped";
+    grid.innerHTML = renderGroups(items);
+    grid.querySelectorAll(".ro-head").forEach((h) =>
+      h.addEventListener("click", () => h.parentElement.classList.toggle("collapsed"))
+    );
+  }
   grid.querySelectorAll(".card").forEach((card) =>
     card.addEventListener("click", () => openModal(card.dataset.id))
   );
 }
+
+function setViewButtons() {
+  $("viewGrouped").classList.toggle("active", state.viewMode === "grouped");
+  $("viewFlat").classList.toggle("active", state.viewMode === "flat");
+}
+
+$("viewGrouped").addEventListener("click", () => {
+  state.viewMode = "grouped";
+  setViewButtons();
+  renderGallery();
+});
+$("viewFlat").addEventListener("click", () => {
+  state.viewMode = "flat";
+  setViewButtons();
+  renderGallery();
+});
 
 ["filterEmployee", "filterType"].forEach((id) =>
   $(id).addEventListener("change", renderGallery)
@@ -348,8 +438,9 @@ function openModal(id) {
     : `<img src="${url}" alt="">`;
   $("modalMeta").innerHTML = `
     <div><b>${escapeHtml(m.originalName)}</b></div>
-    <div>Uploaded by <b>${escapeHtml(m.employeeId)}</b> · ${formatDate(m.uploadedAt)}</div>
+    <div>${m.roNumber ? "RO <b>" + escapeHtml(m.roNumber) + "</b> · " : ""}Uploaded by <b>${escapeHtml(m.employeeId)}</b> · ${formatDate(m.uploadedAt)}</div>
     <div>${formatBytes(m.size)}</div>`;
+  $("modalRo").value = m.roNumber || "";
   $("modalNote").value = m.note || "";
   $("modalDownload").href = url;
   $("modalDownload").setAttribute("download", m.originalName);
@@ -433,23 +524,24 @@ $("modalSssc").addEventListener("click", async (e) => {
   }
 });
 
-$("modalSaveNote").addEventListener("click", async () => {
+$("modalSave").addEventListener("click", async () => {
   const m = state.current;
   if (!m) return;
   try {
     const res = await fetch("/api/media/" + encodeURIComponent(m.id), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ note: $("modalNote").value }),
+      body: JSON.stringify({ note: $("modalNote").value, roNumber: $("modalRo").value }),
     });
     if (!res.ok) throw new Error();
     const data = await res.json();
-    m.note = data.media.note;
+    Object.assign(m, data.media);
     const idx = state.media.findIndex((x) => x.id === m.id);
-    if (idx >= 0) state.media[idx].note = m.note;
-    toast("Note saved");
+    if (idx >= 0) state.media[idx] = m;
+    renderGallery();
+    toast("Saved");
   } catch {
-    toast("Could not save note", true);
+    toast("Could not save", true);
   }
 });
 
@@ -471,15 +563,15 @@ document.addEventListener("keydown", (e) => {
 $("modalDelete").addEventListener("click", async () => {
   const m = state.current;
   if (!m) return;
-  if (!confirm(`Delete "${m.originalName}"?`)) return;
+  if (!confirm(`Move "${m.originalName}" to trash?`)) return;
   try {
     const res = await fetch("/api/media/" + encodeURIComponent(m.id), { method: "DELETE" });
     if (!res.ok) throw new Error();
     closeModal();
-    toast("Deleted");
+    toast("Moved to trash");
     loadMedia();
   } catch {
-    toast("Could not delete", true);
+    toast("Could not move to trash", true);
   }
 });
 
@@ -571,6 +663,7 @@ function initAdmin() {
   if (sessionStorage.getItem(ADMIN_KEY)) {
     showAdminPanel();
     loadAdminStatus();
+    loadTrash();
   } else {
     showAdminLogin();
   }
@@ -592,6 +685,68 @@ async function loadAdminStatus() {
   }
 }
 
+async function loadTrash() {
+  try {
+    const res = await adminFetch("/api/trash");
+    const data = await res.json();
+    const list = $("trashList");
+    const items = data.media || [];
+    if (!items.length) {
+      list.innerHTML = '<div class="muted">Trash is empty.</div>';
+      return;
+    }
+    list.innerHTML = items
+      .map(
+        (m) => `
+      <div class="trash-item">
+        <div class="trash-info">
+          <div class="trash-name">${escapeHtml(m.originalName)}</div>
+          <div class="trash-meta">${m.roNumber ? "RO " + escapeHtml(m.roNumber) + " · " : ""}${formatDate(m.deletedAt)}</div>
+        </div>
+        <button class="btn ghost small" data-restore="${m.id}" type="button">Restore</button>
+        <button class="btn ghost danger small" data-purge="${m.id}" type="button">Delete</button>
+      </div>`
+      )
+      .join("");
+    list.querySelectorAll("[data-restore]").forEach((b) =>
+      b.addEventListener("click", () => trashAction("restore", b.dataset.restore))
+    );
+    list.querySelectorAll("[data-purge]").forEach((b) =>
+      b.addEventListener("click", () => trashAction("purge", b.dataset.purge))
+    );
+  } catch (err) {
+    if (err.message !== "unauthorized") $("trashList").textContent = "Could not load trash.";
+  }
+}
+
+async function trashAction(kind, id) {
+  try {
+    if (kind === "restore") {
+      await adminFetch("/api/media/" + encodeURIComponent(id) + "/restore", { method: "POST" });
+      toast("Restored");
+    } else {
+      await adminFetch("/api/media/" + encodeURIComponent(id) + "/purge", { method: "DELETE" });
+      toast("Deleted");
+    }
+    loadTrash();
+    loadMedia();
+  } catch (err) {
+    if (err.message !== "unauthorized") toast("Action failed", true);
+  }
+}
+
+$("emptyTrashBtn").addEventListener("click", async () => {
+  if (!confirm("Permanently delete everything in the trash?")) return;
+  try {
+    await adminFetch("/api/trash/empty", { method: "POST" });
+    toast("Trash emptied");
+    loadTrash();
+    loadMedia();
+  } catch (err) {
+    if (err.message !== "unauthorized") toast("Action failed", true);
+  }
+});
+
 $("adminLoginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   setAdminResult("");
@@ -610,6 +765,7 @@ $("adminLoginForm").addEventListener("submit", async (e) => {
     $("adminPassword").value = "";
     showAdminPanel();
     loadAdminStatus();
+    loadTrash();
   } catch (err) {
     setAdminResult("Login failed", "err");
   }
