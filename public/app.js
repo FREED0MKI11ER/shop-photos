@@ -62,12 +62,27 @@ function currentRo() {
   return (el.value || "").trim().toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 20);
 }
 
+function requireRo() {
+  if (currentRo()) return true;
+  const ro = $("roInput");
+  if (ro) ro.focus();
+  toast("Enter an RO number first", true);
+  return false;
+}
+
 function updateRoState() {
   const has = !!currentRo();
   ["pickBtn", "shootPhotoBtn", "shootVideoBtn"].forEach((id) => {
     const b = $(id);
-    if (b) b.disabled = !has;
+    if (!b) return;
+    b.disabled = false;
+    b.textContent = has ? b.dataset.label : "Enter RO first";
+    b.classList.toggle("needs-ro", !has);
   });
+  const block = $("roBlock");
+  if (block) block.classList.toggle("ro-missing", !has);
+  const hint = $("roHint");
+  if (hint) hint.style.display = has ? "none" : "block";
 }
 
 function showApp() {
@@ -122,16 +137,12 @@ $("roInput").addEventListener("input", () => {
   updateRoState();
 });
 
-$("pickBtn").addEventListener("click", () => fileInput.click());
-$("shootPhotoBtn").addEventListener("click", () => photoInput.click());
-$("shootVideoBtn").addEventListener("click", () => videoInput.click());
+$("pickBtn").addEventListener("click", () => { if (requireRo()) fileInput.click(); });
+$("shootPhotoBtn").addEventListener("click", () => { if (requireRo()) photoInput.click(); });
+$("shootVideoBtn").addEventListener("click", () => { if (requireRo()) videoInput.click(); });
 dropzone.addEventListener("click", (e) => {
   if (e.target.closest("button")) return;
-  if (!currentRo()) {
-    toast("Enter an RO number first", true);
-    return;
-  }
-  fileInput.click();
+  if (requireRo()) fileInput.click();
 });
 
 fileInput.addEventListener("change", () => addFiles(fileInput.files));
@@ -155,11 +166,8 @@ dropzone.addEventListener("drop", (e) => {
 });
 
 function addFiles(fileList) {
+  if (!requireRo()) return;
   const roNumber = currentRo();
-  if (!roNumber) {
-    toast("Enter an RO number before uploading", true);
-    return;
-  }
   const files = Array.from(fileList || []);
   for (const file of files) {
     const isMedia = /^image\//.test(file.type) || /^video\//.test(file.type);

@@ -47,7 +47,11 @@
 
   <main>
     <section class="view active" id="view-upload">
-      <input id="roInput" class="ro-input" placeholder="RO number (required)" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="20">
+      <div class="ro-block" id="roBlock">
+        <label class="ro-label" for="roInput">RO number <span class="ro-req">required</span></label>
+        <input id="roInput" class="ro-input" placeholder="Enter the RO number" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="20">
+        <div class="ro-hint" id="roHint">Enter the RO number to start uploading.</div>
+      </div>
       <div class="dropzone" id="dropzone">
         <input type="file" id="fileInput" accept="image/*,video/*" multiple hidden>
         <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
@@ -56,9 +60,9 @@
         <div class="dz-title">Tap to choose photos &amp; videos</div>
         <div class="dz-sub">or drag &amp; drop files here</div>
         <div class="dz-actions">
-          <button class="btn" id="pickBtn" type="button">Choose files</button>
-          <button class="btn ghost touch-only" id="shootPhotoBtn" type="button">Take photo</button>
-          <button class="btn ghost touch-only" id="shootVideoBtn" type="button">Record video</button>
+          <button class="btn" id="pickBtn" type="button" data-label="Choose files">Choose files</button>
+          <button class="btn ghost touch-only" id="shootPhotoBtn" type="button" data-label="Take photo">Take photo</button>
+          <button class="btn ghost touch-only" id="shootVideoBtn" type="button" data-label="Record video">Record video</button>
         </div>
       </div>
       <div class="queue" id="queue"></div>
