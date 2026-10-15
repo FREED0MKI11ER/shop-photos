@@ -498,7 +498,11 @@ body::before {
 .admin-audit { margin: 16px 0; text-align: left; }
 .admin-audit h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 10px; }
 .audit-list { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow: auto; }
-.audit-item { display: flex; align-items: baseline; gap: 8px; font-size: 12px; border-bottom: 1px solid var(--border); padding: 5px 2px; }
+.audit-item { border-bottom: 1px solid var(--border); padding: 6px 2px; font-size: 12px; }
+.audit-line { display: flex; align-items: baseline; gap: 8px; }
+.audit-meta { display: flex; gap: 12px; margin-top: 2px; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 10px; color: var(--text-muted); }
+.audit-id { cursor: help; }
+.audit-ip { color: var(--text-muted); }
 .audit-action { font-weight: 700; color: var(--accent); text-transform: uppercase; font-size: 10px; letter-spacing: .5px; min-width: 82px; }
 .audit-detail { flex: 1; min-width: 0; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .audit-time { color: var(--text-muted); white-space: nowrap; }

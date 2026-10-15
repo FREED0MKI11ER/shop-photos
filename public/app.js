@@ -835,11 +835,23 @@ async function loadAudit() {
         ]
           .filter(Boolean)
           .join(" · ");
+        const shortId = e.id ? String(e.id).slice(0, 8) : "";
+        const meta = [
+          shortId
+            ? `<span class="audit-id" title="${escapeHtml(e.id)}">id ${escapeHtml(shortId)}</span>`
+            : "",
+          e.ip ? `<span class="audit-ip">${escapeHtml(e.ip)}</span>` : "",
+        ]
+          .filter(Boolean)
+          .join("");
         return `
         <div class="audit-item">
-          <span class="audit-action">${escapeHtml(e.action || "")}</span>
-          <span class="audit-detail">${escapeHtml(detail)}</span>
-          <span class="audit-time">${formatDate(e.ts)}</span>
+          <div class="audit-line">
+            <span class="audit-action">${escapeHtml(e.action || "")}</span>
+            <span class="audit-detail">${escapeHtml(detail)}</span>
+            <span class="audit-time">${formatDate(e.ts)}</span>
+          </div>
+          ${meta ? `<div class="audit-meta">${meta}</div>` : ""}
         </div>`;
       })
       .join("");
