@@ -21,6 +21,7 @@ const DATA_DIR = path.join(ROOT, "data");
 const UPLOAD_DIR = path.join(DATA_DIR, "uploads");
 const SSSC_DIR = path.join(DATA_DIR, "sssc");
 const TRASH_DIR = path.join(DATA_DIR, "trash");
+const THUMBS_DIR = path.join(DATA_DIR, "thumbs");
 const RUNTIME_DIR = path.join(ROOT, "runtime");
 const DB_FILE = path.join(DATA_DIR, "db.json");
 const PUBLIC_DIR = path.join(ROOT, "public");
@@ -61,7 +62,7 @@ try {
   // VERSION file is optional; fall back to a placeholder.
 }
 
-for (const dir of [DATA_DIR, UPLOAD_DIR, TRASH_DIR]) {
+for (const dir of [DATA_DIR, UPLOAD_DIR, TRASH_DIR, THUMBS_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
@@ -89,6 +90,7 @@ function writeDb() {
 const converter = createConverter({
   uploadDir: UPLOAD_DIR,
   ssscDir: SSSC_DIR,
+  thumbsDir: THUMBS_DIR,
   runtimeDir: RUNTIME_DIR,
   onSave: writeDb,
   log: (m) => console.log(m),
@@ -96,10 +98,14 @@ const converter = createConverter({
 
 const audit = createAudit({ file: path.join(DATA_DIR, "audit.log") });
 
-// Queue any media that isn't converted yet (e.g. after a restart or upgrade).
+// Queue any media that isn't converted yet (e.g. after a restart or upgrade),
+// and generate missing video thumbnails.
 for (const record of db.media) {
-  if (!record.deletedAt && (!record.sssc || record.sssc.status !== "ready")) {
+  if (record.deletedAt) continue;
+  if (!record.sssc || record.sssc.status !== "ready") {
     converter.enqueue(record);
+  } else if (/^video\//.test(record.mime || "") && !record.thumb) {
+    converter.ensureThumb(record);
   }
 }
 
@@ -484,6 +490,11 @@ app.get("/api/media/:id/preview", (req, res) => {
   const mime = record.mime || "";
   if (/^image\/(jpeg|png|gif|webp|bmp)$/.test(mime)) {
     return res.sendFile(path.join(UPLOAD_DIR, record.storedName));
+  }
+  if (/^video\//.test(mime)) {
+    const thumb = converter.thumbPathFor(record);
+    if (thumb) return res.sendFile(thumb);
+    return res.status(404).json({ error: "No thumbnail" });
   }
   const outPath = converter.outputPathFor(record);
   if (outPath && fs.existsSync(outPath)) return res.sendFile(outPath);

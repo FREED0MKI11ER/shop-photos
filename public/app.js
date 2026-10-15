@@ -357,7 +357,9 @@ function cardHtml(m) {
     ? `/files/${encodeURIComponent(m.storedName)}`
     : `/api/media/${encodeURIComponent(m.id)}/preview`;
   const thumb = isVideo
-    ? `<video class="thumb" src="/files/${encodeURIComponent(m.storedName)}" preload="metadata" muted></video>`
+    ? m.thumb
+      ? `<img class="thumb" loading="lazy" src="/api/media/${encodeURIComponent(m.id)}/preview" alt="">`
+      : `<video class="thumb" src="/files/${encodeURIComponent(m.storedName)}" preload="metadata" muted></video>`
     : `<img class="thumb" loading="lazy" src="${imgSrc}" alt="">`;
   const selected = state.selectMode && state.selected.has(m.id);
   return `
