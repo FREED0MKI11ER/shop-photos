@@ -596,7 +596,7 @@ $("modalSave").addEventListener("click", async () => {
   try {
     const res = await fetch("/api/media/" + encodeURIComponent(m.id), {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Employee-Id": state.employeeId },
       body: JSON.stringify({ note: $("modalNote").value, roNumber: $("modalRo").value }),
     });
     if (!res.ok) throw new Error();
@@ -631,7 +631,10 @@ $("modalDelete").addEventListener("click", async () => {
   if (!m) return;
   if (!confirm(`Move "${m.originalName}" to trash?`)) return;
   try {
-    const res = await fetch("/api/media/" + encodeURIComponent(m.id), { method: "DELETE" });
+    const res = await fetch("/api/media/" + encodeURIComponent(m.id), {
+      method: "DELETE",
+      headers: { "X-Employee-Id": state.employeeId },
+    });
     if (!res.ok) throw new Error();
     closeModal();
     toast("Moved to trash");
@@ -829,17 +832,14 @@ async function loadAudit() {
         const detail = [
           e.roNumber ? "RO " + e.roNumber : "",
           e.originalName || "",
-          e.employeeId || "",
           e.count != null ? e.count + " items" : "",
           (e.fields || []).join("/"),
         ]
           .filter(Boolean)
           .join(" · ");
-        const shortId = e.id ? String(e.id).slice(0, 8) : "";
+        const emp = e.employeeId || "";
         const meta = [
-          shortId
-            ? `<span class="audit-id" title="${escapeHtml(e.id)}">id ${escapeHtml(shortId)}</span>`
-            : "",
+          emp ? `<span class="audit-emp">emp ${escapeHtml(emp)}</span>` : "",
           e.ip ? `<span class="audit-ip">${escapeHtml(e.ip)}</span>` : "",
         ]
           .filter(Boolean)

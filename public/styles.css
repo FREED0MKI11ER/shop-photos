@@ -502,6 +502,7 @@ body::before {
 .audit-line { display: flex; align-items: baseline; gap: 8px; }
 .audit-meta { display: flex; gap: 12px; margin-top: 2px; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 10px; color: var(--text-muted); }
 .audit-id { cursor: help; }
+.audit-emp { color: var(--accent); font-weight: 700; }
 .audit-ip { color: var(--text-muted); }
 .audit-action { font-weight: 700; color: var(--accent); text-transform: uppercase; font-size: 10px; letter-spacing: .5px; min-width: 82px; }
 .audit-detail { flex: 1; min-width: 0; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

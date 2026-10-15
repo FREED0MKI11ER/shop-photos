@@ -313,7 +313,7 @@ app.post("/api/admin/login", (req, res) => {
   if (!password || !verifyPassword(password, cred)) {
     return res.status(401).json({ error: "Incorrect password" });
   }
-  audit.write({ action: "admin-login", ip: req.ip });
+  audit.write({ action: "admin-login", employeeId: "admin", ip: req.ip });
   res.json({ token: createSession(), expiresInMs: SESSION_TTL_MS });
 });
 
@@ -382,7 +382,7 @@ app.post("/api/admin/update", requireAdmin, async (req, res) => {
       error: "Could not start the update task. Run install-updater.ps1 on the shop PC.",
     });
   }
-  audit.write({ action: "update", from: APP_VERSION, ip: req.ip });
+  audit.write({ action: "update", employeeId: "admin", from: APP_VERSION, ip: req.ip });
   res.json({ started: true, from: APP_VERSION });
 });
 
@@ -505,6 +505,7 @@ app.patch("/api/media/:id", (req, res) => {
       id: record.id,
       originalName: record.originalName,
       roNumber: record.roNumber,
+      employeeId: cleanEmployeeId(req.get("x-employee-id")),
       fields,
       ip: req.ip,
     });
@@ -609,6 +610,7 @@ app.delete("/api/media/:id", (req, res) => {
     id: record.id,
     originalName: record.originalName,
     roNumber: record.roNumber,
+    employeeId: cleanEmployeeId(req.get("x-employee-id")),
     ip: req.ip,
   });
   res.json({ trashed: record.id });
@@ -639,6 +641,7 @@ app.post("/api/media/:id/restore", requireAdmin, (req, res) => {
     id: record.id,
     originalName: record.originalName,
     roNumber: record.roNumber,
+    employeeId: "admin",
     ip: req.ip,
   });
   res.json({ media: record });
@@ -657,6 +660,7 @@ app.delete("/api/media/:id/purge", requireAdmin, (req, res) => {
     id: record.id,
     originalName: record.originalName,
     roNumber: record.roNumber,
+    employeeId: "admin",
     ip: req.ip,
   });
   res.json({ purged: record.id });
@@ -670,7 +674,7 @@ app.post("/api/trash/empty", requireAdmin, (req, res) => {
     converter.removeOutput(record);
     fs.unlink(path.join(TRASH_DIR, record.storedName), () => {});
   }
-  audit.write({ action: "empty-trash", count: trashed.length, ip: req.ip });
+  audit.write({ action: "empty-trash", count: trashed.length, employeeId: "admin", ip: req.ip });
   res.json({ purged: trashed.length });
 });
 
