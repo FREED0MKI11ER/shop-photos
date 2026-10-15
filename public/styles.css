@@ -549,6 +549,13 @@ body::before {
 .audit-detail { flex: 1; min-width: 0; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .audit-time { color: var(--text-muted); white-space: nowrap; }
 
+.admin-storage { margin: 16px 0; text-align: left; }
+.admin-storage h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 10px; }
+.storage-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
+.storage-item { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; border-bottom: 1px solid var(--border); padding: 4px 2px; }
+.storage-item span { color: var(--text-dim); }
+.storage-item b { color: var(--text); }
+
 /* ---------- Toast ---------- */
 .toast {
   position: fixed;

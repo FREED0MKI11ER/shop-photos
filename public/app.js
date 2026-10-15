@@ -886,6 +886,7 @@ function initAdmin() {
   if (sessionStorage.getItem(ADMIN_KEY)) {
     showAdminPanel();
     loadAdminStatus();
+    loadStorage();
     loadTrash();
     loadAudit();
   } else {
@@ -971,6 +972,39 @@ $("emptyTrashBtn").addEventListener("click", async () => {
   }
 });
 
+async function loadStorage() {
+  try {
+    const res = await adminFetch("/api/admin/storage");
+    const s = await res.json();
+    const g = $("storageGrid");
+    const pct = s.diskTotal ? Math.round((1 - s.diskFree / s.diskTotal) * 100) : null;
+    const rows = [
+      ["Total used", formatBytes(s.totalBytes)],
+      ["Photos/videos", formatBytes(s.uploadsBytes)],
+      ["SSSC copies", formatBytes(s.ssscBytes)],
+      ["Thumbnails", formatBytes(s.thumbsBytes)],
+      ["Trash", formatBytes(s.trashBytes)],
+      [
+        "Disk free",
+        s.diskFree != null
+          ? formatBytes(s.diskFree) + (pct != null ? ` (${pct}% used)` : "")
+          : "?",
+      ],
+      ["Items", `${s.counts.active} active · ${s.counts.trash} trashed`],
+      ["Converting", String(s.backlog.pending + s.backlog.converting)],
+    ];
+    if (s.retentionDays) rows.push(["Retention", s.retentionDays + " days"]);
+    g.innerHTML = rows
+      .map(
+        ([k, v]) =>
+          `<div class="storage-item"><span>${escapeHtml(k)}</span><b>${escapeHtml(v)}</b></div>`
+      )
+      .join("");
+  } catch (err) {
+    if (err.message !== "unauthorized") $("storageGrid").textContent = "Could not load storage.";
+  }
+}
+
 async function loadAudit() {
   try {
     const res = await adminFetch("/api/admin/audit?limit=100");
@@ -1032,6 +1066,7 @@ $("adminLoginForm").addEventListener("submit", async (e) => {
     $("adminPassword").value = "";
     showAdminPanel();
     loadAdminStatus();
+    loadStorage();
     loadTrash();
     loadAudit();
   } catch (err) {

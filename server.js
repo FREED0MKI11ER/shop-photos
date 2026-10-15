@@ -43,6 +43,8 @@ const PORT =
 const PUBLIC_URL = String(SITE_CONFIG.publicUrl || "").replace(/\/+$/, "");
 const TRASH_DAYS =
   parseInt(SITE_CONFIG.trashDays, 10) || parseInt(process.env.TRASH_DAYS, 10) || 30;
+const RETENTION_DAYS =
+  parseInt(SITE_CONFIG.retentionDays, 10) || parseInt(process.env.RETENTION_DAYS, 10) || 0;
 
 const UPDATER_DIR = path.join(ROOT, "updater");
 const ADMIN_CRED_FILE = path.join(UPDATER_DIR, "admin.cred");
@@ -126,6 +128,47 @@ function purgeExpiredTrash() {
 }
 purgeExpiredTrash();
 setInterval(purgeExpiredTrash, 6 * 60 * 60 * 1000);
+
+// Retention: hard-delete photos older than RETENTION_DAYS (0 = disabled).
+function purgeExpiredRetention() {
+  if (!RETENTION_DAYS) return;
+  const cutoff = Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  const expired = db.media.filter(
+    (m) => !m.deletedAt && new Date(m.uploadedAt).getTime() < cutoff
+  );
+  if (!expired.length) return;
+  db.media = db.media.filter((m) => !expired.includes(m));
+  writeDb();
+  for (const record of expired) {
+    converter.removeOutput(record);
+    fs.unlink(path.join(UPLOAD_DIR, record.storedName), () => {});
+    audit.write({
+      action: "retention-purge",
+      id: record.id,
+      originalName: record.originalName,
+      roNumber: record.roNumber,
+      employeeId: "system",
+      ip: "system",
+    });
+  }
+  console.log(`Retention purged ${expired.length} item(s) older than ${RETENTION_DAYS} days.`);
+}
+purgeExpiredRetention();
+setInterval(purgeExpiredRetention, 6 * 60 * 60 * 1000);
+
+function dirSize(dir) {
+  let total = 0;
+  try {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) total += dirSize(full);
+      else total += fs.statSync(full).size;
+    }
+  } catch (err) {
+    /* ignore */
+  }
+  return total;
+}
 
 function safeExtension(originalName) {
   const ext = path.extname(originalName || "").toLowerCase();
@@ -330,6 +373,59 @@ app.post("/api/admin/login", (req, res) => {
 app.get("/api/admin/audit", requireAdmin, (req, res) => {
   const limit = Math.min(parseInt(req.query.limit, 10) || 200, 1000);
   res.json({ entries: audit.tail(limit) });
+});
+
+let storageCache = { at: 0, data: null };
+app.get("/api/admin/storage", requireAdmin, (req, res) => {
+  if (storageCache.data && Date.now() - storageCache.at < 30000) {
+    return res.json(storageCache.data);
+  }
+  const uploads = dirSize(UPLOAD_DIR);
+  const sssc = dirSize(SSSC_DIR);
+  const thumbs = dirSize(THUMBS_DIR);
+  const trash = dirSize(TRASH_DIR);
+  let diskFree = null;
+  let diskTotal = null;
+  try {
+    const st = fs.statfsSync(DATA_DIR);
+    diskFree = st.bavail * st.bsize;
+    diskTotal = st.blocks * st.bsize;
+  } catch (err) {
+    /* statfs unsupported */
+  }
+  const active = db.media.filter((m) => !m.deletedAt);
+  const byRo = {};
+  const byEmployee = {};
+  const backlog = { pending: 0, converting: 0, error: 0 };
+  for (const m of active) {
+    const ro = m.roNumber || "(none)";
+    byRo[ro] = (byRo[ro] || 0) + 1;
+    const emp = m.employeeId || "(none)";
+    byEmployee[emp] = (byEmployee[emp] || 0) + 1;
+    const s = (m.sssc && m.sssc.status) || "pending";
+    if (s === "pending") backlog.pending++;
+    else if (s === "converting") backlog.converting++;
+    else if (s === "error") backlog.error++;
+  }
+  const data = {
+    uploadsBytes: uploads,
+    ssscBytes: sssc,
+    thumbsBytes: thumbs,
+    trashBytes: trash,
+    totalBytes: uploads + sssc + thumbs + trash,
+    diskFree,
+    diskTotal,
+    counts: {
+      active: active.length,
+      trash: db.media.length - active.length,
+      byRo,
+      byEmployee,
+    },
+    backlog,
+    retentionDays: RETENTION_DAYS,
+  };
+  storageCache = { at: Date.now(), data };
+  res.json(data);
 });
 
 app.get("/api/admin/status", requireAdmin, async (req, res) => {
