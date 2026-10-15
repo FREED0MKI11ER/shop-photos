@@ -45,6 +45,11 @@ const TRASH_DAYS =
   parseInt(SITE_CONFIG.trashDays, 10) || parseInt(process.env.TRASH_DAYS, 10) || 30;
 const RETENTION_DAYS =
   parseInt(SITE_CONFIG.retentionDays, 10) || parseInt(process.env.RETENTION_DAYS, 10) || 0;
+const DISK_MIN_BYTES =
+  (parseFloat(SITE_CONFIG.diskMinGb) || parseFloat(process.env.DISK_MIN_GB) || 2) *
+  1024 *
+  1024 *
+  1024;
 
 const UPDATER_DIR = path.join(ROOT, "updater");
 const ADMIN_CRED_FILE = path.join(UPDATER_DIR, "admin.cred");
@@ -170,6 +175,22 @@ function dirSize(dir) {
   return total;
 }
 
+let diskCache = { at: 0, free: null, total: null };
+function diskSpace() {
+  if (Date.now() - diskCache.at < 60000) return diskCache;
+  let free = null;
+  let total = null;
+  try {
+    const st = fs.statfsSync(DATA_DIR);
+    free = st.bavail * st.bsize;
+    total = st.blocks * st.bsize;
+  } catch (err) {
+    /* statfs unsupported */
+  }
+  diskCache = { at: Date.now(), free, total };
+  return diskCache;
+}
+
 function safeExtension(originalName) {
   const ext = path.extname(originalName || "").toLowerCase();
   return /^\.[a-z0-9]{1,6}$/.test(ext) ? ext : "";
@@ -240,6 +261,7 @@ function lanAddresses() {
 
 app.get("/api/info", (req, res) => {
   const addrs = lanAddresses();
+  const disk = diskSpace();
   res.json({
     hostname: os.hostname(),
     port: PORT,
@@ -249,6 +271,8 @@ app.get("/api/info", (req, res) => {
     primaryUrl: addrs.length ? `http://${addrs[0].address}:${PORT}` : null,
     maxUploadBytes: MAX_UPLOAD_BYTES,
     count: db.media.length,
+    diskFree: disk.free,
+    lowDisk: disk.free != null && disk.free < DISK_MIN_BYTES,
   });
 });
 
@@ -426,6 +450,43 @@ app.get("/api/admin/storage", requireAdmin, (req, res) => {
   };
   storageCache = { at: Date.now(), data };
   res.json(data);
+});
+
+app.get("/api/admin/health", requireAdmin, (req, res) => {
+  const disk = diskSpace();
+  const bundledFfmpeg = path.join(RUNTIME_DIR, "ffmpeg", "ffmpeg.exe");
+  const ffmpeg = fs.existsSync(bundledFfmpeg)
+    ? bundledFfmpeg
+    : process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)
+    ? process.env.FFMPEG_PATH
+    : null;
+  const lastUpdate =
+    (audit.tail(500).find((e) => e.action === "update") || {}).ts || null;
+  const active = db.media.filter((m) => !m.deletedAt);
+  const backlog = { pending: 0, converting: 0, error: 0 };
+  for (const m of active) {
+    const s = (m.sssc && m.sssc.status) || "pending";
+    if (s === "pending") backlog.pending++;
+    else if (s === "converting") backlog.converting++;
+    else if (s === "error") backlog.error++;
+  }
+  res.json({
+    version: APP_VERSION,
+    uptimeSec: Math.round(process.uptime()),
+    hostname: os.hostname(),
+    port: PORT,
+    publicUrl: PUBLIC_URL || null,
+    node: process.version,
+    ffmpeg,
+    diskFree: disk.free,
+    diskTotal: disk.total,
+    diskMinBytes: DISK_MIN_BYTES,
+    active: active.length,
+    trash: db.media.length - active.length,
+    backlog,
+    retentionDays: RETENTION_DAYS,
+    lastUpdate,
+  });
 });
 
 app.get("/api/admin/status", requireAdmin, async (req, res) => {

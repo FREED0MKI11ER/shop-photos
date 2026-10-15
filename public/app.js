@@ -887,6 +887,7 @@ function initAdmin() {
     showAdminPanel();
     loadAdminStatus();
     loadStorage();
+    loadSystem();
     loadTrash();
     loadAudit();
   } else {
@@ -1005,6 +1006,44 @@ async function loadStorage() {
   }
 }
 
+async function loadSystem() {
+  try {
+    const res = await adminFetch("/api/admin/health");
+    const s = await res.json();
+    const g = $("systemGrid");
+    const up = s.uptimeSec || 0;
+    const uptime =
+      up >= 86400
+        ? Math.floor(up / 86400) + "d " + Math.floor((up % 86400) / 3600) + "h"
+        : up >= 3600
+        ? Math.floor(up / 3600) + "h " + Math.floor((up % 3600) / 60) + "m"
+        : Math.floor(up / 60) + "m";
+    const rows = [
+      ["Version", s.version],
+      ["Uptime", uptime],
+      ["Host", s.hostname],
+      ["Port", String(s.port)],
+      ["Node", s.node],
+      ["ffmpeg", s.ffmpeg ? "present" : "MISSING"],
+      ["Disk free", s.diskFree != null ? formatBytes(s.diskFree) : "?"],
+      ["Active items", String(s.active)],
+      ["Trash", String(s.trash)],
+      ["Converting", String(s.backlog.pending + s.backlog.converting)],
+      ["Errors", String(s.backlog.error)],
+      ["Last update", s.lastUpdate ? formatDate(s.lastUpdate) : "never"],
+    ];
+    if (s.publicUrl) rows.push(["Public URL", s.publicUrl]);
+    g.innerHTML = rows
+      .map(
+        ([k, v]) =>
+          `<div class="storage-item"><span>${escapeHtml(k)}</span><b>${escapeHtml(v)}</b></div>`
+      )
+      .join("");
+  } catch (err) {
+    if (err.message !== "unauthorized") $("systemGrid").textContent = "Could not load system info.";
+  }
+}
+
 async function loadAudit() {
   try {
     const res = await adminFetch("/api/admin/audit?limit=100");
@@ -1067,6 +1106,7 @@ $("adminLoginForm").addEventListener("submit", async (e) => {
     showAdminPanel();
     loadAdminStatus();
     loadStorage();
+    loadSystem();
     loadTrash();
     loadAudit();
   } catch (err) {
@@ -1162,6 +1202,7 @@ fetch("/api/info")
   .then((r) => r.json())
   .then((info) => {
     if (info.maxUploadBytes) state.maxUploadBytes = info.maxUploadBytes;
+    if (info.lowDisk) $("diskBanner").hidden = false;
   })
   .catch(() => {});
 

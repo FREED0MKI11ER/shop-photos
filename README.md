@@ -106,8 +106,23 @@ after **30 days** (`trashDays` in `site.json`, or the `TRASH_DAYS` env).
 ## Activity log
 
 The Admin tab shows an **Activity** list: uploads, trash/restore/purge, note/RO
-edits, admin logins, and update triggers — with time, RO, filename, and employee.
-Stored in `data\audit.log` (auto-rotates at ~5 MB).
+edits, admin logins, and update triggers — with time, RO, filename, employee, and
+IP. Stored in `data\audit.log` (auto-rotates at ~5 MB).
+
+## Bulk actions
+
+In the gallery, tap **Select** to pick multiple photos/videos, then **Download SSSC**
+or **Download originals** (as a ZIP), **Reassign RO** (6 digits), or **Move to trash**.
+
+## Storage, retention & health
+
+The Admin tab shows **Storage** (usage per area, free disk space, item counts,
+conversion backlog) and **System** (version, uptime, Node, ffmpeg, last update).
+A **low-disk banner** appears when free space drops below `diskMinGb`
+(site.json or `DISK_MIN_GB`, default 2 GB).
+
+Set `retentionDays` (site.json or `RETENTION_DAYS`) to auto-delete photos older than
+N days — **off by default**.
 
 ## SSSC-ready downloads
 
