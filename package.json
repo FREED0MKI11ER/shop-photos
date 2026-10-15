@@ -1,6 +1,6 @@
 {
     "name":  "shop-media-share",
-    "version":  "1.0.8",
+    "version":  "1.0.9",
     "private":  true,
     "description":  "Local network photo/video sharing for the shop",
     "main":  "server.js",
@@ -10,7 +10,9 @@
                     "uninstall-service":  "node service/uninstall-service.js"
                 },
     "dependencies":  {
+                         "archiver":  "^7.0.1",
                          "express":  "^4.21.2",
+                         "heic-decode":  "^2.1.0",
                          "multer":  "^2.0.1",
                          "node-windows":  "^1.0.0-beta.8",
                          "qrcode":  "^1.5.4"

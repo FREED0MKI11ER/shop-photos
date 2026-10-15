@@ -8,7 +8,9 @@ const { execFile } = require("child_process");
 const express = require("express");
 const multer = require("multer");
 const QRCode = require("qrcode");
+const archiver = require("archiver");
 const { createConverter } = require("./lib/converter");
+const { createAudit } = require("./lib/audit");
 
 const HOST = process.env.HOST || "0.0.0.0";
 const MAX_UPLOAD_BYTES =
@@ -91,6 +93,8 @@ const converter = createConverter({
   onSave: writeDb,
   log: (m) => console.log(m),
 });
+
+const audit = createAudit({ file: path.join(DATA_DIR, "audit.log") });
 
 // Queue any media that isn't converted yet (e.g. after a restart or upgrade).
 for (const record of db.media) {
@@ -309,7 +313,13 @@ app.post("/api/admin/login", (req, res) => {
   if (!password || !verifyPassword(password, cred)) {
     return res.status(401).json({ error: "Incorrect password" });
   }
+  audit.write({ action: "admin-login", ip: req.ip });
   res.json({ token: createSession(), expiresInMs: SESSION_TTL_MS });
+});
+
+app.get("/api/admin/audit", requireAdmin, (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit, 10) || 200, 1000);
+  res.json({ entries: audit.tail(limit) });
 });
 
 app.get("/api/admin/status", requireAdmin, async (req, res) => {
@@ -372,6 +382,7 @@ app.post("/api/admin/update", requireAdmin, async (req, res) => {
       error: "Could not start the update task. Run install-updater.ps1 on the shop PC.",
     });
   }
+  audit.write({ action: "update", from: APP_VERSION, ip: req.ip });
   res.json({ started: true, from: APP_VERSION });
 });
 
@@ -440,7 +451,17 @@ app.post("/api/upload", (req, res) => {
     });
 
     if (saved.length) writeDb();
-    for (const record of saved) converter.enqueue(record);
+    for (const record of saved) {
+      converter.enqueue(record);
+      audit.write({
+        action: "upload",
+        id: record.id,
+        originalName: record.originalName,
+        roNumber: record.roNumber,
+        employeeId: record.employeeId,
+        ip: req.ip,
+      });
+    }
     res.json({ uploaded: saved, count: saved.length });
   });
 });
@@ -451,12 +472,43 @@ app.get("/api/media/:id", (req, res) => {
   res.json({ media: record });
 });
 
+// Preview image (serves the original for browser-friendly formats, otherwise the
+// converted JPG - e.g. HEIC photos that browsers can't render).
+app.get("/api/media/:id/preview", (req, res) => {
+  const record = db.media.find((m) => m.id === req.params.id);
+  if (!record) return res.status(404).json({ error: "Not found" });
+  const mime = record.mime || "";
+  if (/^image\/(jpeg|png|gif|webp|bmp)$/.test(mime)) {
+    return res.sendFile(path.join(UPLOAD_DIR, record.storedName));
+  }
+  const outPath = converter.outputPathFor(record);
+  if (outPath && fs.existsSync(outPath)) return res.sendFile(outPath);
+  return res.status(404).json({ error: "Preview not ready" });
+});
+
 app.patch("/api/media/:id", (req, res) => {
   const record = db.media.find((m) => m.id === req.params.id);
   if (!record) return res.status(404).json({ error: "Not found" });
-  if (req.body && "note" in req.body) record.note = cleanNote(req.body.note);
-  if (req.body && "roNumber" in req.body) record.roNumber = cleanRo(req.body.roNumber);
+  const fields = [];
+  if (req.body && "note" in req.body) {
+    record.note = cleanNote(req.body.note);
+    fields.push("note");
+  }
+  if (req.body && "roNumber" in req.body) {
+    record.roNumber = cleanRo(req.body.roNumber);
+    fields.push("roNumber");
+  }
   writeDb();
+  if (fields.length) {
+    audit.write({
+      action: "edit",
+      id: record.id,
+      originalName: record.originalName,
+      roNumber: record.roNumber,
+      fields,
+      ip: req.ip,
+    });
+  }
   res.json({ media: record });
 });
 
@@ -484,6 +536,60 @@ app.get("/api/media/:id/sssc", (req, res) => {
   res.download(outPath, `${prefix}${base}-sssc.${ext}`);
 });
 
+app.get("/api/ro/:ro/sssc/status", (req, res) => {
+  const ro = cleanRo(req.params.ro);
+  const items = db.media.filter((m) => !m.deletedAt && (m.roNumber || "") === ro);
+  let ready = 0;
+  let pending = 0;
+  let error = 0;
+  for (const m of items) {
+    const st = (m.sssc && m.sssc.status) || "pending";
+    if (st === "ready") ready++;
+    else if (st === "error") error++;
+    else {
+      pending++;
+      converter.enqueue(m);
+    }
+  }
+  res.json({ ro, total: items.length, ready, pending, error });
+});
+
+app.get("/api/ro/:ro/sssc.zip", (req, res) => {
+  const ro = cleanRo(req.params.ro);
+  const items = db.media.filter((m) => !m.deletedAt && (m.roNumber || "") === ro);
+  if (!items.length) return res.status(404).json({ error: "No photos for this RO" });
+  const notReady = items.filter((m) => !m.sssc || m.sssc.status !== "ready");
+  if (notReady.length) {
+    for (const m of notReady) converter.enqueue(m);
+    return res
+      .status(409)
+      .json({ status: "preparing", pending: notReady.length, total: items.length });
+  }
+  const safeRo = (ro || "no-ro").replace(/[^\w-]/g, "_");
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader("Content-Disposition", `attachment; filename="${safeRo}-sssc.zip"`);
+  const archive = archiver("zip", { zlib: { level: 5 } });
+  archive.on("error", (err) => {
+    console.error("zip error:", err.message);
+    try {
+      res.destroy(err);
+    } catch (e) {}
+  });
+  archive.pipe(res);
+  for (const m of items) {
+    const outPath = converter.outputPathFor(m);
+    if (!outPath || !fs.existsSync(outPath)) continue;
+    const ext = (m.sssc && m.sssc.ext) || path.extname(m.originalName || "") || "";
+    const base = path.basename(
+      m.originalName || m.storedName,
+      path.extname(m.originalName || "")
+    );
+    const prefix = m.roNumber ? `${m.roNumber}-` : "";
+    archive.file(outPath, { name: `${prefix}${base}-sssc.${ext}` });
+  }
+  archive.finalize();
+});
+
 app.delete("/api/media/:id", (req, res) => {
   const record = db.media.find((m) => m.id === req.params.id);
   if (!record || record.deletedAt) return res.status(404).json({ error: "Not found" });
@@ -498,6 +604,13 @@ app.delete("/api/media/:id", (req, res) => {
     if (err.code !== "ENOENT") console.error("trash move failed:", err.message);
   }
   converter.removeOutput(record);
+  audit.write({
+    action: "trash",
+    id: record.id,
+    originalName: record.originalName,
+    roNumber: record.roNumber,
+    ip: req.ip,
+  });
   res.json({ trashed: record.id });
 });
 
@@ -521,6 +634,13 @@ app.post("/api/media/:id/restore", requireAdmin, (req, res) => {
   }
   delete record.deletedAt;
   converter.enqueue(record);
+  audit.write({
+    action: "restore",
+    id: record.id,
+    originalName: record.originalName,
+    roNumber: record.roNumber,
+    ip: req.ip,
+  });
   res.json({ media: record });
 });
 
@@ -532,6 +652,13 @@ app.delete("/api/media/:id/purge", requireAdmin, (req, res) => {
   converter.removeOutput(record);
   fs.unlink(path.join(TRASH_DIR, record.storedName), () => {});
   fs.unlink(path.join(UPLOAD_DIR, record.storedName), () => {});
+  audit.write({
+    action: "purge",
+    id: record.id,
+    originalName: record.originalName,
+    roNumber: record.roNumber,
+    ip: req.ip,
+  });
   res.json({ purged: record.id });
 });
 
@@ -543,6 +670,7 @@ app.post("/api/trash/empty", requireAdmin, (req, res) => {
     converter.removeOutput(record);
     fs.unlink(path.join(TRASH_DIR, record.storedName), () => {});
   }
+  audit.write({ action: "empty-trash", count: trashed.length, ip: req.ip });
   res.json({ purged: trashed.length });
 });
 

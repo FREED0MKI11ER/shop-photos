@@ -350,9 +350,13 @@ function filteredMedia() {
 
 function cardHtml(m) {
   const isVideo = /^video\//.test(m.mime);
+  const browserImg = /^image\/(jpeg|png|gif|webp|bmp)$/.test(m.mime || "");
+  const imgSrc = browserImg
+    ? `/files/${encodeURIComponent(m.storedName)}`
+    : `/api/media/${encodeURIComponent(m.id)}/preview`;
   const thumb = isVideo
     ? `<video class="thumb" src="/files/${encodeURIComponent(m.storedName)}" preload="metadata" muted></video>`
-    : `<img class="thumb" loading="lazy" src="/files/${encodeURIComponent(m.storedName)}" alt="">`;
+    : `<img class="thumb" loading="lazy" src="${imgSrc}" alt="">`;
   return `
     <div class="card" data-id="${m.id}">
       ${thumb}
@@ -379,16 +383,59 @@ function renderGroups(items) {
   arr.sort((a, b) => b.latest.localeCompare(a.latest));
   return arr
     .map(({ ro, list }) => `
-      <section class="ro-group">
-        <button class="ro-head" type="button">
-          <span class="ro-title">${ro ? "RO " + escapeHtml(ro) : "No RO"}</span>
-          <span class="ro-count">${list.length}</span>
-          <span class="ro-date">${formatDate(list[0].uploadedAt)}</span>
-          <span class="ro-chevron">▾</span>
-        </button>
+      <section class="ro-group" data-ro="${escapeHtml(ro)}">
+        <div class="ro-head">
+          <button class="ro-toggle" type="button">
+            <span class="ro-title">${ro ? "RO " + escapeHtml(ro) : "No RO"}</span>
+            <span class="ro-count">${list.length}</span>
+            <span class="ro-date">${formatDate(list[0].uploadedAt)}</span>
+            <span class="ro-chevron">▾</span>
+          </button>
+          ${ro ? `<button class="ro-dl" type="button" data-ro="${escapeHtml(ro)}" title="Download all for SSSC">⬇ SSSC</button>` : ""}
+        </div>
         <div class="gallery ro-grid">${list.map(cardHtml).join("")}</div>
       </section>`)
     .join("");
+}
+
+async function downloadRoZip(ro, btn) {
+  const enc = encodeURIComponent(ro);
+  const label = btn ? btn.textContent : "";
+  if (btn) btn.disabled = true;
+  const deadline = Date.now() + 180000;
+  try {
+    while (Date.now() < deadline) {
+      try {
+        const res = await fetch(`/api/ro/${enc}/sssc/status`, { cache: "no-store" });
+        if (res.ok) {
+          const s = await res.json();
+          if (s.total === 0) {
+            toast("Nothing to download for this RO", true);
+            return;
+          }
+          if (s.pending === 0) {
+            const a = document.createElement("a");
+            a.href = `/api/ro/${enc}/sssc.zip`;
+            a.download = "";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            return;
+          }
+          if (btn) btn.textContent = `Preparing ${s.ready}/${s.total}…`;
+        }
+      } catch {
+        /* keep polling */
+      }
+      await new Promise((r) => setTimeout(r, 2500));
+    }
+    toast("Still preparing — try again shortly", true);
+  } finally {
+    if (btn) {
+      btn.textContent = label;
+      btn.disabled = false;
+    }
+  }
 }
 
 function renderGallery() {
@@ -406,8 +453,14 @@ function renderGallery() {
   } else {
     grid.className = "gallery-grouped";
     grid.innerHTML = renderGroups(items);
-    grid.querySelectorAll(".ro-head").forEach((h) =>
-      h.addEventListener("click", () => h.parentElement.classList.toggle("collapsed"))
+    grid.querySelectorAll(".ro-toggle").forEach((h) =>
+      h.addEventListener("click", () => h.closest(".ro-group").classList.toggle("collapsed"))
+    );
+    grid.querySelectorAll(".ro-dl").forEach((b) =>
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        downloadRoZip(b.dataset.ro, b);
+      })
     );
   }
   grid.querySelectorAll(".card").forEach((card) =>
@@ -444,9 +497,11 @@ function openModal(id) {
   state.current = m;
   const url = "/files/" + encodeURIComponent(m.storedName);
   const isVideo = /^video\//.test(m.mime);
+  const browserImg = /^image\/(jpeg|png|gif|webp|bmp)$/.test(m.mime || "");
+  const imgSrc = browserImg ? url : `/api/media/${encodeURIComponent(m.id)}/preview`;
   $("modalMedia").innerHTML = isVideo
     ? `<video src="${url}" controls autoplay playsinline></video>`
-    : `<img src="${url}" alt="">`;
+    : `<img src="${imgSrc}" alt="">`;
   $("modalMeta").innerHTML = `
     <div><b>${escapeHtml(m.originalName)}</b></div>
     <div>${m.roNumber ? "RO <b>" + escapeHtml(m.roNumber) + "</b> · " : ""}Uploaded by <b>${escapeHtml(m.employeeId)}</b> · ${formatDate(m.uploadedAt)}</div>
@@ -675,6 +730,7 @@ function initAdmin() {
     showAdminPanel();
     loadAdminStatus();
     loadTrash();
+    loadAudit();
   } else {
     showAdminLogin();
   }
@@ -758,6 +814,40 @@ $("emptyTrashBtn").addEventListener("click", async () => {
   }
 });
 
+async function loadAudit() {
+  try {
+    const res = await adminFetch("/api/admin/audit?limit=100");
+    const data = await res.json();
+    const list = $("auditList");
+    const entries = data.entries || [];
+    if (!entries.length) {
+      list.innerHTML = '<div class="muted">No activity yet.</div>';
+      return;
+    }
+    list.innerHTML = entries
+      .map((e) => {
+        const detail = [
+          e.roNumber ? "RO " + e.roNumber : "",
+          e.originalName || "",
+          e.employeeId || "",
+          e.count != null ? e.count + " items" : "",
+          (e.fields || []).join("/"),
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        return `
+        <div class="audit-item">
+          <span class="audit-action">${escapeHtml(e.action || "")}</span>
+          <span class="audit-detail">${escapeHtml(detail)}</span>
+          <span class="audit-time">${formatDate(e.ts)}</span>
+        </div>`;
+      })
+      .join("");
+  } catch (err) {
+    if (err.message !== "unauthorized") $("auditList").textContent = "Could not load activity.";
+  }
+}
+
 $("adminLoginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   setAdminResult("");
@@ -777,6 +867,7 @@ $("adminLoginForm").addEventListener("submit", async (e) => {
     showAdminPanel();
     loadAdminStatus();
     loadTrash();
+    loadAudit();
   } catch (err) {
     setAdminResult("Login failed", "err");
   }

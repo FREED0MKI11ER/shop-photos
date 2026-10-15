@@ -103,6 +103,12 @@ Deleting a photo moves it to the **Trash** (Admin tab, behind the admin password
 rather than erasing it — restore it or delete it permanently. Trash auto-empties
 after **30 days** (`trashDays` in `site.json`, or the `TRASH_DAYS` env).
 
+## Activity log
+
+The Admin tab shows an **Activity** list: uploads, trash/restore/purge, note/RO
+edits, admin logins, and update triggers — with time, RO, filename, and employee.
+Stored in `data\audit.log` (auto-rotates at ~5 MB).
+
 ## SSSC-ready downloads
 
 Uploads are unrestricted, but a converted copy is prepared for SSSC automatically
@@ -116,6 +122,18 @@ Uploads are unrestricted, but a converted copy is prepared for SSSC automaticall
 - Tunable via environment variables: `SSSC_PHOTO_MAX_MB` (6),
   `SSSC_VIDEO_MAX_MB` (200), `SSSC_IMAGE_MAX_EDGE` (2560), `SSSC_JPEG_QUALITY`
   (4), `SSSC_ENABLED` (1), `FFMPEG_PATH`.
+
+### Per-RO ZIP
+
+Each RO group in the gallery has a **⬇ SSSC** button that downloads every photo for
+that job as one ZIP of SSSC-ready files (named `RO-<name>-sssc.jpg|mp4`). If some
+are still converting it shows "Preparing…" and starts the download when they're ready.
+
+### HEIC (iPhone) photos
+
+HEIC/HEIF photos are converted to JPG for the SSSC copy, and the gallery/viewer
+preview uses that JPG (browsers can't display HEIC). The plain **Download** keeps
+the original HEIC file.
 
 ## Custom port & public address (`site.json`)
 
