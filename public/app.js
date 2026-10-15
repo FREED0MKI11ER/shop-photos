@@ -2,7 +2,6 @@
 
 const $ = (id) => document.getElementById(id);
 const ID_KEY = "shop.employeeId";
-const RO_KEY = "shop.roNumber";
 
 const state = {
   employeeId: localStorage.getItem(ID_KEY) || "",
@@ -90,7 +89,7 @@ function showApp() {
   $("app").hidden = false;
   $("whoChip").textContent = state.employeeId;
   const ro = $("roInput");
-  if (ro) ro.value = localStorage.getItem(RO_KEY) || "";
+  if (ro) ro.value = "";
   updateRoState();
   loadMedia();
 }
@@ -118,6 +117,11 @@ document.querySelectorAll(".tab").forEach((tab) => {
     document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
     tab.classList.add("active");
     $("view-" + tab.dataset.view).classList.add("active");
+    if (tab.dataset.view !== "upload") {
+      const ro = $("roInput");
+      if (ro) ro.value = "";
+      updateRoState();
+    }
     if (tab.dataset.view === "connect") loadConnect();
     if (tab.dataset.view === "gallery") loadMedia();
     if (tab.dataset.view === "admin") initAdmin();
@@ -133,7 +137,6 @@ const videoInput = $("videoInput");
 $("roInput").addEventListener("input", () => {
   const v = currentRo();
   if ($("roInput").value !== v) $("roInput").value = v;
-  localStorage.setItem(RO_KEY, v);
   updateRoState();
 });
 
@@ -860,6 +863,9 @@ $("adminUpdateBtn").addEventListener("click", async () => {
 });
 
 /* ---------------- Boot ---------------- */
+// The RO is intentionally NOT remembered between sessions (fresh slate on load).
+try { localStorage.removeItem("shop.roNumber"); } catch {}
+
 fetch("/api/info")
   .then((r) => r.json())
   .then((info) => {
