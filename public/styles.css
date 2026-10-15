@@ -177,10 +177,6 @@ body::before {
 .dz-title { font-size: 17px; font-weight: 600; margin-top: 8px; }
 .dz-sub { color: var(--text-dim); font-size: 14px; margin-top: 4px; }
 .dz-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
-.touch-only { display: none; }
-@media (hover: none) and (pointer: coarse) {
-  .touch-only { display: inline-flex; }
-}
 
 .queue { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
 .queue-item {

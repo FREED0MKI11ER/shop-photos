@@ -73,7 +73,7 @@ function requireRo() {
 
 function updateRoState() {
   const has = /^\d{6}$/.test(currentRo());
-  ["pickBtn", "shootPhotoBtn", "shootVideoBtn"].forEach((id) => {
+  ["pickBtn"].forEach((id) => {
     const b = $(id);
     if (!b) return;
     b.disabled = false;
@@ -133,8 +133,6 @@ document.querySelectorAll(".tab").forEach((tab) => {
 /* ---------------- Upload ---------------- */
 const dropzone = $("dropzone");
 const fileInput = $("fileInput");
-const photoInput = $("photoInput");
-const videoInput = $("videoInput");
 
 $("roInput").addEventListener("input", () => {
   const v = currentRo();
@@ -143,16 +141,12 @@ $("roInput").addEventListener("input", () => {
 });
 
 $("pickBtn").addEventListener("click", () => { if (requireRo()) fileInput.click(); });
-$("shootPhotoBtn").addEventListener("click", () => { if (requireRo()) photoInput.click(); });
-$("shootVideoBtn").addEventListener("click", () => { if (requireRo()) videoInput.click(); });
 dropzone.addEventListener("click", (e) => {
   if (e.target.closest("button")) return;
   if (requireRo()) fileInput.click();
 });
 
 fileInput.addEventListener("change", () => addFiles(fileInput.files));
-photoInput.addEventListener("change", () => addFiles(photoInput.files));
-videoInput.addEventListener("change", () => addFiles(videoInput.files));
 
 ["dragenter", "dragover"].forEach((ev) =>
   dropzone.addEventListener(ev, (e) => {
@@ -183,8 +177,6 @@ function addFiles(fileList) {
     state.queue.push({ file, roNumber, status: "queued", progress: 0, error: null });
   }
   fileInput.value = "";
-  photoInput.value = "";
-  videoInput.value = "";
   renderQueue();
   if (state.queue.some((q) => q.status === "queued")) uploadQueue();
 }
