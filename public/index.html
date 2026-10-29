@@ -170,7 +170,8 @@
       <label for="modalRo">RO number</label>
       <input id="modalRo" maxlength="20" placeholder="RO number">
       <label for="modalNote">Note</label>
-      <textarea id="modalNote" rows="2" placeholder="Add a note (optional)"></textarea>
+      <textarea id="modalNote" rows="2" maxlength="10000" placeholder="Add a note (optional)"></textarea>
+      <div class="note-count" id="noteCount"></div>
       <div class="modal-note-actions">
         <button class="btn small" id="modalSave" type="button">Save</button>
       </div>

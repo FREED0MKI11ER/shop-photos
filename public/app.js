@@ -654,11 +654,19 @@ function openModal(id) {
     <div>${formatBytes(m.size)}</div>`;
   $("modalRo").value = m.roNumber || "";
   $("modalNote").value = m.note || "";
+  updateNoteCount();
   $("modalDownload").href = url;
   $("modalDownload").setAttribute("download", m.originalName);
   renderSsscButton(m);
   $("modal").hidden = false;
 }
+
+function updateNoteCount() {
+  const el = $("noteCount");
+  const t = $("modalNote");
+  if (el && t) el.textContent = t.value.length + " / 10000";
+}
+$("modalNote").addEventListener("input", updateNoteCount);
 
 let ssscPoll = null;
 function stopSsscPoll() {

@@ -523,6 +523,7 @@ body::before {
   resize: vertical;
 }
 .modal-fields input:focus, .modal-fields textarea:focus { border-color: var(--accent); }
+.note-count { font-size: 11px; color: var(--text-muted); text-align: right; margin-top: 4px; }
 
 .admin-trash { margin: 16px 0; text-align: left; }
 .admin-trash h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 10px; }

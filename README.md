@@ -88,7 +88,8 @@ LAN setup does not use. The shortcut still gives a home-screen icon.
 ## Notes
 
 Each photo/video can have an optional note. Open a photo in the viewer and add or
-edit it with **Save**. The gallery search matches notes too.
+edit it with **Save**. The gallery search matches notes too. Notes can be up to
+**10,000 characters**.
 
 ## RO numbers
 

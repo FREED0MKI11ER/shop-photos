@@ -231,7 +231,7 @@ function cleanNote(value) {
     .replace(/\r\n?/g, "\n")
     .replace(/[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f]/g, "")
     .trim()
-    .slice(0, 500);
+    .slice(0, 10000);
 }
 
 function cleanRo(value) {

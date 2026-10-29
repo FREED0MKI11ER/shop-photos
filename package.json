@@ -1,6 +1,6 @@
 {
     "name":  "shop-media-share",
-    "version":  "1.0.17",
+    "version":  "1.0.18",
     "private":  true,
     "description":  "Local network photo/video sharing for the shop",
     "main":  "server.js",
