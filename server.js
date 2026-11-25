@@ -111,7 +111,7 @@ for (const record of db.media) {
   if (record.deletedAt) continue;
   if (!record.sssc || record.sssc.status !== "ready") {
     converter.enqueue(record);
-  } else if (/^video\//.test(record.mime || "") && !record.thumb) {
+  } else if (!record.thumb) {
     converter.ensureThumb(record);
   }
 }
@@ -658,6 +658,15 @@ app.get("/api/media/:id/preview", (req, res) => {
   return res.status(404).json({ error: "Preview not ready" });
 });
 
+app.get("/api/media/:id/thumb", (req, res) => {
+  const record = db.media.find((m) => m.id === req.params.id);
+  if (!record) return res.status(404).end();
+  const p = converter.thumbPathFor(record);
+  if (!p) return res.status(404).end();
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  res.sendFile(p);
+});
+
 app.patch("/api/media/:id", (req, res) => {
   const record = db.media.find((m) => m.id === req.params.id);
   if (!record) return res.status(404).json({ error: "Not found" });
@@ -971,7 +980,10 @@ app.use(
   "/files",
   express.static(UPLOAD_DIR, {
     index: false,
-    setHeaders: (res) => res.setHeader("Accept-Ranges", "bytes"),
+    setHeaders: (res) => {
+      res.setHeader("Accept-Ranges", "bytes");
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    },
   })
 );
 

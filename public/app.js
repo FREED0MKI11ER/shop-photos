@@ -214,26 +214,42 @@ function renderQueue() {
   );
 }
 
-let uploading = false;
+const MAX_PARALLEL = 3;
+let activeUploads = 0;
+let batchActive = false;
+
 function uploadQueue() {
-  if (uploading) return;
-  const next = state.queue.find((q) => q.status === "queued");
-  if (!next) {
+  if (!state.queue.some((q) => q.status === "queued")) {
     renderQueue();
     return;
   }
-  uploading = true;
   $("uploadBar").hidden = false;
+  batchActive = true;
+  pump();
+}
 
+function pump() {
+  while (activeUploads < MAX_PARALLEL) {
+    const next = state.queue.find((q) => q.status === "queued");
+    if (!next) break;
+    startUpload(next);
+  }
+  if (batchActive && activeUploads === 0 && !state.queue.some((q) => q.status === "queued")) {
+    batchActive = false;
+    finishBatch();
+  }
+}
+
+function startUpload(next) {
   if (next.file.size > state.maxUploadBytes) {
     next.status = "error";
     next.error = "Too large";
-    uploading = false;
     renderQueue();
-    return uploadQueue();
+    return;
   }
-
+  activeUploads++;
   next.status = "uploading";
+  next.progress = 0;
   renderQueue();
 
   const form = new FormData();
@@ -252,6 +268,14 @@ function uploadQueue() {
     }
   };
 
+  const finish = () => {
+    activeUploads = Math.max(0, activeUploads - 1);
+    updateOverall();
+    renderQueue();
+    loadMedia();
+    pump();
+  };
+
   xhr.onload = () => {
     if (xhr.status >= 200 && xhr.status < 300) {
       next.status = "done";
@@ -264,33 +288,24 @@ function uploadQueue() {
         next.error = "Failed";
       }
     }
-    finishOne();
+    finish();
   };
   xhr.onerror = () => {
     next.status = "error";
     next.error = "Network error";
-    finishOne();
+    finish();
   };
   xhr.send(form);
 }
 
-function finishOne() {
-  uploading = false;
-  updateOverall();
-  renderQueue();
-  loadMedia();
-  const remaining = state.queue.some((q) => q.status === "queued");
-  if (remaining) {
-    uploadQueue();
-  } else {
-    const failed = state.queue.filter((q) => q.status === "error").length;
-    toast(failed ? `Finished with ${failed} error(s)` : "Upload complete", !!failed);
-    setTimeout(() => {
-      $("uploadBar").hidden = true;
-      state.queue = state.queue.filter((q) => q.status !== "done");
-      renderQueue();
-    }, 1500);
-  }
+function finishBatch() {
+  const failed = state.queue.filter((q) => q.status === "error").length;
+  toast(failed ? `Finished with ${failed} error(s)` : "Upload complete", !!failed);
+  setTimeout(() => {
+    $("uploadBar").hidden = true;
+    state.queue = state.queue.filter((q) => q.status !== "done");
+    renderQueue();
+  }, 1500);
 }
 
 function updateOverall() {
@@ -345,14 +360,17 @@ function filteredMedia() {
 function cardHtml(m) {
   const isVideo = /^video\//.test(m.mime);
   const browserImg = /^image\/(jpeg|png|gif|webp|bmp)$/.test(m.mime || "");
-  const imgSrc = browserImg
-    ? `/files/${encodeURIComponent(m.storedName)}`
-    : `/api/media/${encodeURIComponent(m.id)}/preview`;
-  const thumb = isVideo
-    ? m.thumb
-      ? `<img class="thumb" loading="lazy" src="/api/media/${encodeURIComponent(m.id)}/preview" alt="">`
-      : `<video class="thumb" src="/files/${encodeURIComponent(m.storedName)}" preload="metadata" muted></video>`
-    : `<img class="thumb" loading="lazy" src="${imgSrc}" alt="">`;
+  let thumb;
+  if (m.thumb) {
+    thumb = `<img class="thumb" loading="lazy" src="/api/media/${encodeURIComponent(m.id)}/thumb" alt="">`;
+  } else if (isVideo) {
+    thumb = `<video class="thumb" src="/files/${encodeURIComponent(m.storedName)}" preload="metadata" muted></video>`;
+  } else {
+    const imgSrc = browserImg
+      ? `/files/${encodeURIComponent(m.storedName)}`
+      : `/api/media/${encodeURIComponent(m.id)}/preview`;
+    thumb = `<img class="thumb" loading="lazy" src="${imgSrc}" alt="">`;
+  }
   const selected = state.selectMode && state.selected.has(m.id);
   return `
     <div class="card${selected ? " selected" : ""}" data-id="${m.id}">
@@ -365,6 +383,71 @@ function cardHtml(m) {
         <div class="meta">${formatDate(m.uploadedAt)} · ${formatBytes(m.size)}</div>
       </div>
     </div>`;
+}
+
+const PAGE_SIZE = 30;
+
+const sentinelObs =
+  typeof IntersectionObserver !== "undefined"
+    ? new IntersectionObserver(
+        (entries) => {
+          for (const en of entries) {
+            if (en.isIntersecting) expandFrom(en.target);
+          }
+        },
+        { rootMargin: "400px" }
+      )
+    : null;
+
+function observeSentinels(root) {
+  if (!sentinelObs) return;
+  root.querySelectorAll(".more-sentinel").forEach((s) => sentinelObs.observe(s));
+}
+
+function bindCards(root) {
+  root.querySelectorAll(".card").forEach((card) => {
+    if (card.dataset.bound) return;
+    card.dataset.bound = "1";
+    card.addEventListener("click", () => {
+      if (state.selectMode) toggleSelect(card.dataset.id);
+      else openModal(card.dataset.id);
+    });
+  });
+}
+
+function expandFrom(sentinel) {
+  if (sentinel.dataset.loading) return;
+  sentinel.dataset.loading = "1";
+  try {
+    if (sentinel.dataset.kind === "flat") {
+      const items = filteredMedia();
+      const grid = $("gallery");
+      const rendered = grid.querySelectorAll(".card").length;
+      const next = items.slice(rendered, rendered + PAGE_SIZE);
+      if (next.length) sentinel.insertAdjacentHTML("beforebegin", next.map(cardHtml).join(""));
+      if (rendered + next.length >= items.length) {
+        if (sentinelObs) sentinelObs.unobserve(sentinel);
+        sentinel.remove();
+        return;
+      }
+      bindCards(grid);
+    } else {
+      const ro = sentinel.dataset.ro || "";
+      const items = filteredMedia().filter((m) => (m.roNumber || "") === ro);
+      const grid = sentinel.parentElement;
+      const rendered = grid.querySelectorAll(".card").length;
+      const next = items.slice(rendered, rendered + PAGE_SIZE);
+      if (next.length) sentinel.insertAdjacentHTML("beforebegin", next.map(cardHtml).join(""));
+      if (rendered + next.length >= items.length) {
+        if (sentinelObs) sentinelObs.unobserve(sentinel);
+        sentinel.remove();
+        return;
+      }
+      bindCards(grid);
+    }
+  } finally {
+    delete sentinel.dataset.loading;
+  }
 }
 
 function renderGroups(items) {
@@ -380,7 +463,13 @@ function renderGroups(items) {
   });
   arr.sort((a, b) => b.latest.localeCompare(a.latest));
   return arr
-    .map(({ ro, list }) => `
+    .map(({ ro, list }) => {
+      const first = list.slice(0, PAGE_SIZE);
+      const more =
+        list.length > PAGE_SIZE
+          ? `<div class="more-sentinel" data-kind="group" data-ro="${escapeHtml(ro)}"></div>`
+          : "";
+      return `
       <section class="ro-group" data-ro="${escapeHtml(ro)}">
         <div class="ro-head">
           <button class="ro-toggle" type="button">
@@ -391,8 +480,9 @@ function renderGroups(items) {
           </button>
           ${ro ? `<button class="ro-dl" type="button" data-ro="${escapeHtml(ro)}" title="Download all for SSSC">⬇ SSSC</button>` : ""}
         </div>
-        <div class="gallery ro-grid">${list.map(cardHtml).join("")}</div>
-      </section>`)
+        <div class="gallery ro-grid">${first.map(cardHtml).join("")}${more}</div>
+      </section>`;
+    })
     .join("");
 }
 
@@ -439,6 +529,7 @@ async function downloadRoZip(ro, btn) {
 function renderGallery() {
   const items = filteredMedia();
   const grid = $("gallery");
+  if (sentinelObs) sentinelObs.disconnect();
   $("galleryEmpty").hidden = state.media.length !== 0;
   if (state.media.length && !items.length) {
     grid.className = "gallery";
@@ -447,7 +538,12 @@ function renderGallery() {
   }
   if (state.viewMode === "flat") {
     grid.className = "gallery";
-    grid.innerHTML = items.map(cardHtml).join("");
+    const first = items.slice(0, PAGE_SIZE);
+    grid.innerHTML =
+      first.map(cardHtml).join("") +
+      (items.length > PAGE_SIZE ? '<div class="more-sentinel" data-kind="flat"></div>' : "");
+    bindCards(grid);
+    observeSentinels(grid);
   } else {
     grid.className = "gallery-grouped";
     grid.innerHTML = renderGroups(items);
@@ -460,13 +556,9 @@ function renderGallery() {
         downloadRoZip(b.dataset.ro, b);
       })
     );
+    bindCards(grid);
+    observeSentinels(grid);
   }
-  grid.querySelectorAll(".card").forEach((card) =>
-    card.addEventListener("click", () => {
-      if (state.selectMode) toggleSelect(card.dataset.id);
-      else openModal(card.dataset.id);
-    })
-  );
 }
 
 function setViewButtons() {

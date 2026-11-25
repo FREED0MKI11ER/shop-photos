@@ -507,6 +507,7 @@ body::before {
 .ro-group.collapsed .ro-chevron { transform: rotate(-90deg); }
 .ro-group.collapsed .ro-grid { display: none; }
 .ro-grid { padding: 12px; }
+.more-sentinel { grid-column: 1 / -1; height: 1px; }
 
 .modal-fields { margin: 14px 2px; }
 .modal-fields label { display: block; font-size: 12px; color: var(--text-dim); margin: 10px 0 6px; }
