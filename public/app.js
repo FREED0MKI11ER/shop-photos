@@ -342,11 +342,21 @@ function populateEmployeeFilter() {
   select.value = current;
 }
 
+function sortKeyAndDir() {
+  const v = $("sortOrder") ? $("sortOrder").value : "upload-desc";
+  return { field: v.startsWith("taken") ? "captured" : "upload", desc: v.endsWith("desc") };
+}
+
+function sortValue(m, field) {
+  return field === "captured" ? m.capturedAt || m.uploadedAt : m.uploadedAt;
+}
+
 function filteredMedia() {
   const emp = $("filterEmployee").value;
   const type = $("filterType").value;
   const search = $("searchBox").value.trim().toLowerCase();
-  return state.media.filter((m) => {
+  const { field, desc } = sortKeyAndDir();
+  const items = state.media.filter((m) => {
     if (emp && m.employeeId !== emp) return false;
     if (type === "image" && !/^image\//.test(m.mime)) return false;
     if (type === "video" && !/^video\//.test(m.mime)) return false;
@@ -355,6 +365,12 @@ function filteredMedia() {
         !(m.roNumber || "").toLowerCase().includes(search)) return false;
     return true;
   });
+  items.sort((a, b) => {
+    const av = sortValue(a, field);
+    const bv = sortValue(b, field);
+    return desc ? bv.localeCompare(av) : av.localeCompare(bv);
+  });
+  return items;
 }
 
 function cardHtml(m) {
@@ -372,6 +388,7 @@ function cardHtml(m) {
     thumb = `<img class="thumb" loading="lazy" src="${imgSrc}" alt="">`;
   }
   const selected = state.selectMode && state.selected.has(m.id);
+  const failed = m.sssc && m.sssc.status === "error";
   return `
     <div class="card${selected ? " selected" : ""}" data-id="${m.id}">
       ${state.selectMode ? `<span class="card-check">${selected ? "✓" : ""}</span>` : ""}
@@ -380,7 +397,8 @@ function cardHtml(m) {
       <div class="info">
         ${m.roNumber ? `<div class="ro">RO ${escapeHtml(m.roNumber)}</div>` : ""}
         <div class="who">${escapeHtml(m.employeeId)}</div>
-        <div class="meta">${formatDate(m.uploadedAt)} · ${formatBytes(m.size)}</div>
+        <div class="meta">${formatDate(m.capturedAt || m.uploadedAt)} · ${formatBytes(m.size)}</div>
+        ${failed ? `<div class="err">⚠ SSSC failed</div>` : ""}
       </div>
     </div>`;
 }
@@ -457,25 +475,22 @@ function renderGroups(items) {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(m);
   }
-  const arr = [...groups.entries()].map(([ro, list]) => {
-    list.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
-    return { ro, list, latest: list[0].uploadedAt };
-  });
-  arr.sort((a, b) => b.latest.localeCompare(a.latest));
-  return arr
-    .map(({ ro, list }) => {
+  return [...groups.entries()]
+    .map(([ro, list]) => {
       const first = list.slice(0, PAGE_SIZE);
       const more =
         list.length > PAGE_SIZE
           ? `<div class="more-sentinel" data-kind="group" data-ro="${escapeHtml(ro)}"></div>`
           : "";
+      const failed = list.filter((m) => m.sssc && m.sssc.status === "error").length;
       return `
       <section class="ro-group" data-ro="${escapeHtml(ro)}">
         <div class="ro-head">
           <button class="ro-toggle" type="button">
             <span class="ro-title">${ro ? "RO " + escapeHtml(ro) : "No RO"}</span>
             <span class="ro-count">${list.length}</span>
-            <span class="ro-date">${formatDate(list[0].uploadedAt)}</span>
+            ${failed ? `<span class="ro-failed">${failed} failed</span>` : ""}
+            <span class="ro-date">${formatDate(list[0].capturedAt || list[0].uploadedAt)}</span>
             <span class="ro-chevron">▾</span>
           </button>
           ${ro ? `<button class="ro-dl" type="button" data-ro="${escapeHtml(ro)}" title="Download all for SSSC">⬇ SSSC</button>` : ""}
@@ -490,6 +505,7 @@ async function downloadRoZip(ro, btn) {
   const enc = encodeURIComponent(ro);
   const label = btn ? btn.textContent : "";
   if (btn) btn.disabled = true;
+  let retries = 0;
   const deadline = Date.now() + 180000;
   try {
     while (Date.now() < deadline) {
@@ -501,7 +517,7 @@ async function downloadRoZip(ro, btn) {
             toast("Nothing to download for this RO", true);
             return;
           }
-          if (s.pending === 0) {
+          if (s.pending === 0 && s.error === 0) {
             const a = document.createElement("a");
             a.href = `/api/ro/${enc}/sssc.zip`;
             a.download = "";
@@ -510,7 +526,22 @@ async function downloadRoZip(ro, btn) {
             a.remove();
             return;
           }
-          if (btn) btn.textContent = `Preparing ${s.ready}/${s.total}…`;
+          if (s.pending === 0 && s.error > 0) {
+            if (retries < 2 && (s.erroredIds || []).length) {
+              retries++;
+              await fetch("/api/media/bulk", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ids: s.erroredIds, action: "retry" }),
+              });
+              if (btn) btn.textContent = `Retrying ${s.error}…`;
+            } else {
+              toast(`${s.error} file(s) failed to convert`, true);
+              return;
+            }
+          } else if (btn) {
+            btn.textContent = `Preparing ${s.ready}/${s.total}…`;
+          }
         }
       } catch {
         /* keep polling */
@@ -577,7 +608,7 @@ $("viewFlat").addEventListener("click", () => {
   renderGallery();
 });
 
-["filterEmployee", "filterType"].forEach((id) =>
+["filterEmployee", "filterType", "sortOrder"].forEach((id) =>
   $(id).addEventListener("change", renderGallery)
 );
 $("searchBox").addEventListener("input", renderGallery);
@@ -607,6 +638,16 @@ function updateBulkBar() {
     const b = $(id);
     if (b) b.disabled = n === 0;
   });
+  const retryBtn = $("bulkRetry");
+  if (retryBtn) {
+    let errored = 0;
+    for (const id of state.selected) {
+      const m = state.media.find((x) => x.id === id);
+      if (m && m.sssc && m.sssc.status === "error") errored++;
+    }
+    retryBtn.disabled = errored === 0;
+    retryBtn.textContent = errored ? `Retry failed (${errored})` : "Retry failed";
+  }
 }
 
 function toggleSelect(id) {
@@ -622,8 +663,8 @@ function toggleSelect(id) {
   updateBulkBar();
 }
 
-async function bulkAction(action, extra) {
-  const ids = [...state.selected];
+async function bulkAction(action, extra, idsOverride) {
+  const ids = idsOverride || [...state.selected];
   if (!ids.length) return;
   const res = await fetch("/api/media/bulk", {
     method: "POST",
@@ -638,6 +679,7 @@ async function bulkAction(action, extra) {
 async function downloadZip(ids, kind, btn) {
   const label = btn ? btn.textContent : "";
   if (btn) btn.disabled = true;
+  let retries = 0;
   const deadline = Date.now() + 180000;
   try {
     while (Date.now() < deadline) {
@@ -660,7 +702,21 @@ async function downloadZip(ids, kind, btn) {
       }
       if (res.status === 409) {
         const d = await res.json().catch(() => ({}));
-        if (btn) btn.textContent = `Preparing ${(d.total || 0) - (d.pending || 0)}/${d.total || 0}…`;
+        if ((d.error || 0) > 0 && (d.pending || 0) === 0 && (d.erroredIds || []).length) {
+          if (retries < 2) {
+            retries++;
+            await fetch("/api/media/bulk", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ids: d.erroredIds, action: "retry" }),
+            });
+            if (btn) btn.textContent = `Retrying ${d.error}…`;
+          } else {
+            throw new Error(`${d.error} file(s) failed to convert`);
+          }
+        } else if (btn) {
+          btn.textContent = `Preparing ${(d.total || 0) - (d.pending || 0)}/${d.total || 0}…`;
+        }
       } else {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error || "Download failed");
@@ -711,6 +767,25 @@ $("bulkRo").addEventListener("click", async () => {
   }
 });
 
+$("bulkRetry").addEventListener("click", async () => {
+  const ids = [...state.selected].filter((id) => {
+    const m = state.media.find((x) => x.id === id);
+    return m && m.sssc && m.sssc.status === "error";
+  });
+  if (!ids.length) {
+    toast("No failed conversions in selection", true);
+    return;
+  }
+  try {
+    await bulkAction("retry", {}, ids);
+    toast("Retrying " + ids.length + " file(s)…");
+    loadMedia();
+    updateBulkBar();
+  } catch (err) {
+    toast(err.message || "Failed", true);
+  }
+});
+
 $("bulkDlSssc").addEventListener("click", async () => {
   if (!state.selected.size) return;
   try {
@@ -742,7 +817,8 @@ function openModal(id) {
     : `<img src="${imgSrc}" alt="">`;
   $("modalMeta").innerHTML = `
     <div><b>${escapeHtml(m.originalName)}</b></div>
-    <div>${m.roNumber ? "RO <b>" + escapeHtml(m.roNumber) + "</b> · " : ""}Uploaded by <b>${escapeHtml(m.employeeId)}</b> · ${formatDate(m.uploadedAt)}</div>
+    <div>${m.roNumber ? "RO <b>" + escapeHtml(m.roNumber) + "</b> · " : ""}Uploaded by <b>${escapeHtml(m.employeeId)}</b></div>
+    <div>${m.capturedAt ? "Taken " + formatDate(m.capturedAt) + " · " : ""}Uploaded ${formatDate(m.uploadedAt)}</div>
     <div>${formatBytes(m.size)}</div>`;
   $("modalRo").value = m.roNumber || "";
   $("modalNote").value = m.note || "";
@@ -772,6 +848,17 @@ function renderSsscButton(m) {
   const btn = $("modalSssc");
   const s = m.sssc || { status: "pending" };
   const id = encodeURIComponent(m.id);
+  const note = $("ssscNote");
+  if (note) {
+    if (s.status === "error" && s.error) {
+      note.textContent = "Conversion failed: " + s.error;
+      note.hidden = false;
+    } else {
+      note.textContent = "";
+      note.hidden = true;
+    }
+  }
+  btn.classList.remove("danger");
   if (s.status === "ready") {
     btn.classList.remove("disabled");
     btn.href = `/api/media/${id}/sssc`;
@@ -780,9 +867,10 @@ function renderSsscButton(m) {
     btn.textContent = "Download for SSSC";
     stopSsscPoll();
   } else if (s.status === "error") {
-    btn.classList.add("disabled");
+    btn.classList.remove("disabled");
+    btn.classList.add("danger");
     btn.removeAttribute("href");
-    btn.textContent = "SSSC conversion failed — click to retry";
+    btn.textContent = "Retry SSSC conversion";
     stopSsscPoll();
   } else if (s.status === "disabled") {
     btn.classList.add("disabled");

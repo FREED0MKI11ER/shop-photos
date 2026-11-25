@@ -79,6 +79,12 @@
           <option value="video">Videos</option>
         </select>
         <input id="searchBox" placeholder="Search filename, RO, note…">
+        <select id="sortOrder">
+          <option value="upload-desc">Newest upload</option>
+          <option value="upload-asc">Oldest upload</option>
+          <option value="taken-desc">Taken: newest</option>
+          <option value="taken-asc">Taken: oldest</option>
+        </select>
         <div class="view-toggle">
           <button class="seg active" id="viewGrouped" type="button">By RO</button>
           <button class="seg" id="viewFlat" type="button">All</button>
@@ -157,6 +163,7 @@
     <button class="btn ghost small" id="bulkDlOrig" type="button">Download originals</button>
     <button class="btn ghost small" id="bulkRo" type="button">Reassign RO</button>
     <button class="btn ghost danger small" id="bulkTrash" type="button">Move to trash</button>
+    <button class="btn ghost small" id="bulkRetry" type="button">Retry failed</button>
     <button class="link" id="bulkCancel" type="button">Cancel</button>
   </div>
 </div>
@@ -181,6 +188,7 @@
       <a class="btn ghost" id="modalSssc" download>Download for SSSC</a>
       <button class="btn ghost danger" id="modalDelete" type="button">Move to trash</button>
     </div>
+    <div class="sssc-note" id="ssscNote" hidden></div>
   </div>
 </div>
 

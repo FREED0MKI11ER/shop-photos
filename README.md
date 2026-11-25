@@ -151,6 +151,17 @@ HEIC/HEIF photos are converted to JPG for the SSSC copy, and the gallery/viewer
 preview uses that JPG (browsers can't display HEIC). The plain **Download** keeps
 the original HEIC file.
 
+### Conversion errors & retries
+
+Failed conversions are flagged on the gallery cards and in the Admin storage
+backlog. Open a photo to see the exact error and **Retry**; per-RO and bulk
+downloads auto-retry failures (up to 2×) and report anything that still fails.
+
+### Capture date
+
+Photos/videos show their **taken** date (EXIF / video metadata) when available,
+falling back to upload time. The gallery sort can be by upload or taken date.
+
 ## Custom port & public address (`site.json`)
 
 Create `site.json` in the install folder (next to `server.js`) to change the port

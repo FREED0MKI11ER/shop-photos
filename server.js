@@ -110,11 +110,23 @@ const audit = createAudit({ file: path.join(DATA_DIR, "audit.log") });
 for (const record of db.media) {
   if (record.deletedAt) continue;
   if (!record.sssc || record.sssc.status !== "ready") {
-    converter.enqueue(record);
+    if ((record.ssscAttempts || 0) < 3) converter.enqueue(record);
   } else if (!record.thumb) {
     converter.ensureThumb(record);
   }
 }
+
+// Backfill capture dates in the background (sequential, so it doesn't flood).
+(async () => {
+  for (const record of db.media) {
+    if (record.deletedAt || record.capturedAt) continue;
+    try {
+      await converter.ensureCapturedAt(record);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+})();
 
 // Permanently remove trash older than TRASH_DAYS (on startup and every 6 hours).
 function purgeExpiredTrash() {
@@ -697,6 +709,7 @@ app.patch("/api/media/:id", (req, res) => {
 app.post("/api/media/:id/sssc", (req, res) => {
   const record = db.media.find((m) => m.id === req.params.id);
   if (!record) return res.status(404).json({ error: "Not found" });
+  record.ssscAttempts = 0;
   converter.enqueue(record);
   res.json({ queued: true });
 });
@@ -726,16 +739,19 @@ app.get("/api/ro/:ro/sssc/status", (req, res) => {
   let ready = 0;
   let pending = 0;
   let error = 0;
+  const erroredIds = [];
   for (const m of items) {
     const st = (m.sssc && m.sssc.status) || "pending";
     if (st === "ready") ready++;
-    else if (st === "error") error++;
-    else {
+    else if (st === "error") {
+      error++;
+      erroredIds.push(m.id);
+    } else {
       pending++;
       converter.enqueue(m);
     }
   }
-  res.json({ ro, total: items.length, ready, pending, error });
+  res.json({ ro, total: items.length, ready, pending, error, erroredIds });
 });
 
 app.get("/api/ro/:ro/sssc.zip", (req, res) => {
@@ -916,6 +932,14 @@ app.post("/api/media/bulk", (req, res) => {
       n++;
     }
     writeDb();
+  } else if (action === "retry") {
+    for (const id of ids) {
+      const record = db.media.find((m) => m.id === id);
+      if (!record) continue;
+      record.ssscAttempts = 0;
+      converter.enqueue(record);
+      n++;
+    }
   } else {
     return res.status(400).json({ error: "Unknown action" });
   }
@@ -934,10 +958,17 @@ app.post("/api/media/zip", (req, res) => {
   if (kind === "sssc") {
     const notReady = items.filter((m) => !m.sssc || m.sssc.status !== "ready");
     if (notReady.length) {
+      const erroredIds = items
+        .filter((m) => m.sssc && m.sssc.status === "error")
+        .map((m) => m.id);
       for (const m of notReady) converter.enqueue(m);
-      return res
-        .status(409)
-        .json({ status: "preparing", pending: notReady.length, total: items.length });
+      return res.status(409).json({
+        status: "preparing",
+        pending: notReady.length,
+        total: items.length,
+        error: erroredIds.length,
+        erroredIds,
+      });
     }
   }
 
